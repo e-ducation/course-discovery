@@ -16,6 +16,7 @@ from course_discovery.apps.api.v1.views.program_types import ProgramTypeViewSet
 from course_discovery.apps.api.v1.views.programs import ProgramViewSet
 from course_discovery.apps.api.v1.views.subjects import SubjectViewSet
 from course_discovery.apps.api.v1.views.topics import TopicViewSet
+from course_discovery.apps.api.v1.views.program_extend import ProgramEliteExtendViewSet
 
 partners_router = routers.SimpleRouter()
 partners_router.register(r'affiliate_window/catalogs', AffiliateWindowViewSet, base_name='affiliate_window')
@@ -38,6 +39,7 @@ router.register(r'topics', TopicViewSet, base_name='topic')
 router.register(r'programs', ProgramViewSet, base_name='program')
 router.register(r'credit_pathways', CreditPathwayViewSet, base_name='credit_pathway')
 router.register(r'program_types', ProgramTypeViewSet, base_name='program_type')
+router.register(r'program_extend', ProgramEliteExtendViewSet, base_name='program_extend')
 router.register(r'search/all', search_views.AggregateSearchViewSet, base_name='search-all')
 router.register(r'search/courses', search_views.CourseSearchViewSet, base_name='search-courses')
 router.register(r'search/course_runs', search_views.CourseRunSearchViewSet, base_name='search-course_runs')

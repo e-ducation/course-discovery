@@ -1439,3 +1439,8 @@ class DataLoaderConfig(SingletonModel):
     Configuration for data loaders used in the refresh_course_metadata command.
     """
     max_workers = models.PositiveSmallIntegerField(default=7)
+
+
+class ProgramEliteExtend(TimeStampedModel):
+    program = models.ForeignKey(Program, to_field='uuid')
+    video = models.CharField(max_length=255, unique=True)

@@ -23,7 +23,7 @@ from course_discovery.apps.course_metadata.choices import CourseRunStatus, Progr
 from course_discovery.apps.course_metadata.models import (
     FAQ, CorporateEndorsement, Course, CourseEntitlement, CourseRun, CreditPathway, Degree, Endorsement, Image,
     Organization, Person, PersonSocialNetwork, PersonWork, Position, Prerequisite, Program, ProgramType, Ranking,
-    Seat, SeatType, Subject, Topic, Video
+    Seat, SeatType, Subject, Topic, Video, ProgramEliteExtend
 )
 
 User = get_user_model()
@@ -1409,3 +1409,15 @@ class TopicSerializer(serializers.ModelSerializer):
     class Meta(object):
         model = Topic
         fields = ('name', 'subtitle', 'description', 'long_description', 'banner_image_url', 'slug', 'uuid')
+
+
+class ProgramEliteExtendSerializer(serializers.ModelSerializer):
+    """Serializer for the ``ProgramEliteExtend`` model."""
+
+    @classmethod
+    def prefetch_queryset(cls):
+        return ProgramEliteExtend.objects.filter()
+
+    class Meta(object):
+        model = ProgramEliteExtend
+        fields = ('program', 'video')
