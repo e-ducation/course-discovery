@@ -13,7 +13,7 @@
                     <input name="staff-image" id="staffImageSelect" type="file" accept="image/*" onchange="loadSelectedImage(this);">
                 </div>
                 <ul>
-                    <li><span class="required"> {% trans "The image dimensions must be less than 110 x 110" %}</span>
+                    <li><span class="required"> {% trans "The image dimensions must be 110×110" %}</span>
                     </li>
                     <li><span class="required"> {% trans "The image size must be less than 256KB" %}</span></li>
                 </ul>
@@ -31,15 +31,6 @@
                     <span class="required">* {% trans "required" %}</span>
                 </label>
                 <input class="field-input input-text" type="text" id="title" name="title"/>
-
-                <label class="field-label" for="email">{% trans "Email" %}
-                    <span class="required">* {% trans "required" %}</span>
-                </label>
-                <div class="email-field">
-                    <input class="field-input input-text" aria-describedby="email-hint" type="email" id="email"
-                           name="email"/>
-                    <span id="email-hint">{% trans "Institution email is preferred" %}</span>
-                </div>
 
                 <label class="field-label">{% trans "Organization" %}
                     <span class="required">* {% trans "required" %}</span>
@@ -66,31 +57,36 @@
 
 
                 <label class="field-label" for="bio">{% trans "Bio" %}
-                    <span class="required">* {% trans "required (1-2 paragraphs)" %}</span>
+                    <span class="required">* {% trans "required" %}</span>
+                    <span class="optional">- {% trans "one or two paragraphs in HTML format (consider using &lt;p&gt;)" %}</span>
                 </label>
                 <textarea class="field-textarea input-textarea textarea-medium textarea-block" id="bio"
                           name="bio"></textarea>
 
-                <label class="field-label" for="facebook">{% trans "Facebook URL" %}
-                    <span class="optional"> {% trans "optional" %}</span>
-                </label>
-                <input class="field-input input-text" type="text" id="facebook" name="facebook"/>
-
-                <label class="field-label" for="twitter">{% trans "Twitter URL" %}
-                    <span class="optional"> {% trans "optional" %}</span>
-                </label>
-                <input class="field-input input-text" type="text" id="twitter" name="twitter"/>
-
-                <label class="field-label" for="blog">{% trans "Blog URL" %}
-                    <span class="optional"> {% trans "optional" %}</span>
-                </label>
-                <input class="field-input input-text" type="text" id="blog" name="blog"/>
+                <div class="js-social-links-wrapper">
+                    <label class="field-label">{% trans "Social Links" %}
+                        <span class="optional"> {% trans "optional" %}</span>
+                    </label>
+                </div>
+                <button class="btn-base add-instructor-list-item-btn js-add-social-link-btn">
+                    {% trans "Add new social link" %}
+                </button>
 
                 <label class="field-label" for="majorWorks">{% trans "Major Works" %}
-                    <span class="optional">({% trans "optional - one per line" %} )</span>
+                    <span class="optional"> {% trans "optional" %}</span>
+                    <span class="optional">- {% trans "a list in HTML format (consider using &lt;ul&gt; or &lt;br&gt;)" %}</span>
                 </label>
                 <textarea class="field-textarea input-textarea textarea-medium textarea-block" id="majorWorks"
                           name="major-works"></textarea>
+
+                <div class="js-areas-of-expertise-wrapper">
+                    <label class="field-label">{% trans "Areas of Expertise" %}
+                        <span class="optional"> {% trans "optional" %}</span>
+                    </label>
+                </div>
+                <button class="btn-base add-instructor-list-item-btn js-add-area-of-expertise-btn">
+                    {% trans "Add new area of expertise" %}
+                </button>
             </fieldset>
             <div class="actions">
                 <a class="btn-cancel closeModal" href="#">{% trans "Cancel" %}</a>

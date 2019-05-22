@@ -7,7 +7,7 @@ from django.test import TestCase
 
 from course_discovery.apps.course_metadata.choices import CourseRunPacing
 from course_discovery.apps.course_metadata.tests.factories import (
-    OrganizationFactory, PersonFactory, PersonSocialNetworkFactory, PositionFactory
+    OrganizationFactory, PersonAreaOfExpertiseFactory, PersonFactory, PersonSocialNetworkFactory, PositionFactory
 )
 from course_discovery.apps.publisher.choices import CourseRunStateChoices, PublisherUserRole
 from course_discovery.apps.publisher.models import Seat
@@ -124,10 +124,10 @@ class CourseRunWrapperTests(TestCase):
 
     def test_is_self_paced(self):
         """ Verify that the wrapper return the is_self_paced. """
-        self.course_run.pacing_type = CourseRunPacing.Instructor
+        self.course_run.pacing_type_temporary = CourseRunPacing.Instructor
         self.course_run.save()
         self.assertFalse(self.wrapped_course_run.is_self_paced)
-        self.course_run.pacing_type = CourseRunPacing.Self
+        self.course_run.pacing_type_temporary = CourseRunPacing.Self
         self.course_run.save()
         self.assertTrue(self.wrapped_course_run.is_self_paced)
 
@@ -135,7 +135,7 @@ class CourseRunWrapperTests(TestCase):
         """ Verify that the wrapper return the mdc_submission_due_date. """
         current_date = datetime.today()
         expected_date = current_date - timedelta(days=10)
-        self.course_run.start = current_date
+        self.course_run.start_date_temporary = current_date
         self.course_run.save()
         self.assertEqual(self.wrapped_course_run.mdc_submission_due_date, expected_date)
 
@@ -164,7 +164,7 @@ class CourseRunWrapperTests(TestCase):
     def test_course_staff(self):
         """Verify that the wrapper return staff list."""
         staff = PersonFactory()
-        staff.profile_image_url = None
+        staff.profile_image = None
         staff.save()
 
         # another staff with position by default staff has no position associated.
@@ -175,7 +175,11 @@ class CourseRunWrapperTests(TestCase):
         self.course_run.save()
 
         facebook = PersonSocialNetworkFactory(person=staff_2, type='facebook')
-        twitter = PersonSocialNetworkFactory(person=staff_2, type='twitter')
+        twitter = PersonSocialNetworkFactory(person=staff_2, type='twitter', title='@MrTerry')
+
+        area_1 = PersonAreaOfExpertiseFactory(person=staff)
+        area_2 = PersonAreaOfExpertiseFactory(person=staff)
+        area_3 = PersonAreaOfExpertiseFactory(person=staff_2)
 
         expected = [
             {
@@ -183,10 +187,19 @@ class CourseRunWrapperTests(TestCase):
                 'full_name': staff.full_name,
                 'image_url': staff.get_profile_image_url,
                 'profile_url': staff.profile_url,
-                'social_networks': {},
+                'social_networks': [],
+                'major_works': staff.major_works,
                 'bio': staff.bio,
-                'is_new': True,
-                'email': staff.email
+                'areas_of_expertise': [
+                    {
+                        'id': area_1.id,
+                        'value': area_1.value
+                    },
+                    {
+                        'id': area_2.id,
+                        'value': area_2.value
+                    },
+                ],
             },
             {
                 'uuid': str(staff_2.uuid),
@@ -194,14 +207,31 @@ class CourseRunWrapperTests(TestCase):
                 'image_url': staff_2.get_profile_image_url,
                 'position': position.title,
                 'organization': position.organization_name,
-                'profile_url': staff.profile_url,
-                'is_new': False,
-                'social_networks': {'facebook': facebook.value, 'twitter': twitter.value},
+                'profile_url': staff_2.profile_url,
+                'social_networks': [
+                    {
+                        'id': facebook.id,
+                        'type': facebook.type,
+                        'url': facebook.url,
+                        'title': facebook.title,
+                    },
+                    {
+                        'id': twitter.id,
+                        'type': twitter.type,
+                        'url': twitter.url,
+                        'title': twitter.title,
+                    },
+                ],
                 'bio': staff_2.bio,
-                'email': staff_2.email
+                'major_works': staff_2.major_works,
+                'areas_of_expertise': [
+                    {
+                        'id': area_3.id,
+                        'value': area_3.value
+                    },
+                ],
             }
         ]
-
         self.assertEqual(self.wrapped_course_run.course_staff, expected)
 
     def _change_state_and_owner(self, course_run_state):

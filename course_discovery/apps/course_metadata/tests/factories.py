@@ -7,6 +7,7 @@ from pytz import UTC
 
 from course_discovery.apps.core.tests.factories import PartnerFactory, add_m2m_data
 from course_discovery.apps.core.tests.utils import FuzzyURL
+from course_discovery.apps.course_metadata.constants import PathwayType
 from course_discovery.apps.course_metadata.models import *  # pylint: disable=wildcard-import
 from course_discovery.apps.ietf_language_tags.models import LanguageTag
 
@@ -21,6 +22,11 @@ class AbstractMediaModelFactory(factory.DjangoModelFactory):
 
 class AbstractNamedModelFactory(factory.DjangoModelFactory):
     name = FuzzyText()
+
+
+class AbstractTitleDescriptionFactory(factory.DjangoModelFactory):
+    title = FuzzyText(length=255)
+    description = FuzzyText()
 
 
 class ImageFactory(AbstractMediaModelFactory):
@@ -72,6 +78,11 @@ class PrerequisiteFactory(AbstractNamedModelFactory):
         model = Prerequisite
 
 
+class AdditionalPromoAreaFactory(AbstractTitleDescriptionFactory):
+    class Meta:
+        model = AdditionalPromoArea
+
+
 class CourseFactory(factory.DjangoModelFactory):
     uuid = factory.LazyFunction(uuid4)
     key = FuzzyText(prefix='course-id/')
@@ -86,6 +97,11 @@ class CourseFactory(factory.DjangoModelFactory):
     syllabus_raw = FuzzyText()
     outcome = FuzzyText()
     image = factory.django.ImageField()
+    canonical_course_run = None
+    extra_description = factory.SubFactory(AdditionalPromoAreaFactory)
+    additional_information = FuzzyText()
+    faq = FuzzyText()
+    learner_testimonials = FuzzyText()
 
     class Meta:
         model = Course
@@ -130,6 +146,7 @@ class CourseRunFactory(factory.DjangoModelFactory):
     hidden = False
     weeks_to_complete = FuzzyInteger(1)
     license = 'all-rights-reserved'
+    has_ofac_restrictions = True
 
     @factory.post_generation
     def staff(self, create, extracted, **kwargs):
@@ -185,8 +202,8 @@ class PersonFactory(factory.DjangoModelFactory):
     given_name = factory.Faker('first_name')
     family_name = factory.Faker('last_name')
     bio = FuzzyText()
-    profile_image_url = FuzzyURL()
-    profile_image = FuzzyText(prefix='https://example.com/person/profile_image')
+    profile_image = FuzzyText(prefix='person/profile_image')
+    major_works = FuzzyText()
 
     class Meta:
         model = Person
@@ -345,9 +362,18 @@ class DegreeFactory(ProgramFactory):
     class Meta(object):
         model = Degree
 
-    application_deadline = FuzzyText()
     apply_url = FuzzyURL()
     overall_ranking = FuzzyText()
+    lead_capture_list_name = FuzzyText()
+    application_requirements = FuzzyText()
+    prerequisite_coursework = FuzzyText()
+    micromasters_url = FuzzyText()
+    micromasters_long_title = FuzzyText()
+    micromasters_long_description = FuzzyText()
+    search_card_ranking = FuzzyText()
+    search_card_cost = FuzzyText()
+    search_card_courses = FuzzyText()
+    banner_border_color = FuzzyText(length=6)
 
     @factory.post_generation
     def rankings(self, create, extracted, **kwargs):
@@ -355,12 +381,22 @@ class DegreeFactory(ProgramFactory):
             add_m2m_data(self.rankings, extracted)
 
 
+class IconTextPairingFactory(factory.django.DjangoModelFactory):
+    class Meta(object):
+        model = IconTextPairing
+
+    degree = factory.SubFactory(DegreeFactory)
+    icon = FuzzyText(length=25)
+    text = FuzzyText(length=255)
+
+
 class CurriculumFactory(factory.DjangoModelFactory):
     class Meta(object):
         model = Curriculum
 
     uuid = factory.LazyFunction(uuid4)
-    name = FuzzyText()
+    marketing_text_brief = FuzzyText()
+    marketing_text = FuzzyText()
     degree = factory.SubFactory(DegreeFactory)
 
     @factory.post_generation
@@ -372,6 +408,26 @@ class CurriculumFactory(factory.DjangoModelFactory):
     def course_curriculum(self, create, extracted, **kwargs):
         if create:  # pragma: no cover
             add_m2m_data(self.course_curriculum, extracted)
+
+
+class DegreeDeadlineFactory(factory.DjangoModelFactory):
+    class Meta(object):
+        model = DegreeDeadline
+
+    degree = factory.SubFactory(DegreeFactory)
+    semester = FuzzyText()
+    name = FuzzyText()
+    date = FuzzyText()
+    time = FuzzyText()
+
+
+class DegreeCostFactory(factory.DjangoModelFactory):
+    class Meta(object):
+        model = DegreeCost
+
+    degree = factory.SubFactory(DegreeFactory)
+    description = FuzzyText()
+    amount = FuzzyText()
 
 
 class DegreeProgramCurriculumFactory(factory.DjangoModelFactory):
@@ -390,35 +446,36 @@ class DegreeCourseCurriculumFactory(factory.DjangoModelFactory):
     curriculum = factory.SubFactory(CurriculumFactory)
 
 
-class CreditPathwayFactory(factory.DjangoModelFactory):
+class PathwayFactory(factory.DjangoModelFactory):
+    uuid = factory.LazyFunction(uuid4)
     partner = factory.SubFactory(PartnerFactory)
     name = FuzzyText()
     org_name = FuzzyText()
     email = factory.Sequence(lambda n: 'test-email-{}@test.com'.format(n))  # pylint: disable=unnecessary-lambda
     description = FuzzyText()
     destination_url = FuzzyURL()
+    pathway_type = FuzzyChoice((path_type.value for path_type in PathwayType))
 
     class Meta:
-        model = CreditPathway
+        model = Pathway
 
 
-class AbstractSocialNetworkModelFactory(factory.DjangoModelFactory):
-    type = FuzzyChoice([name for name, __ in AbstractSocialNetworkModel.SOCIAL_NETWORK_CHOICES])
-    value = FuzzyText()
-
-
-class PersonSocialNetworkFactory(AbstractSocialNetworkModelFactory):
+class PersonSocialNetworkFactory(factory.DjangoModelFactory):
+    type = FuzzyChoice(PersonSocialNetwork.SOCIAL_NETWORK_CHOICES.keys())
+    url = FuzzyText()
+    title = FuzzyText()
     person = factory.SubFactory(PersonFactory)
 
     class Meta:
         model = PersonSocialNetwork
 
 
-class CourseRunSocialNetworkFactory(AbstractSocialNetworkModelFactory):
-    course_run = factory.SubFactory(CourseRunFactory)
+class PersonAreaOfExpertiseFactory(factory.DjangoModelFactory):
+    value = FuzzyText()
+    person = factory.SubFactory(PersonFactory)
 
     class Meta:
-        model = CourseRunSocialNetwork
+        model = PersonAreaOfExpertise
 
 
 class SeatTypeFactory(factory.django.DjangoModelFactory):
@@ -433,13 +490,6 @@ class SyllabusItemFactory(factory.django.DjangoModelFactory):
         model = SyllabusItem
 
 
-class PersonWorkFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = PersonWork
-
-    person = factory.SubFactory(PersonFactory)
-
-
 class CourseEntitlementFactory(factory.DjangoModelFactory):
     mode = factory.SubFactory(SeatTypeFactory)
     price = FuzzyDecimal(0.0, 650.0)
@@ -450,3 +500,13 @@ class CourseEntitlementFactory(factory.DjangoModelFactory):
 
     class Meta:
         model = CourseEntitlement
+
+
+class DrupalPublishUuidConfigFactory(factory.DjangoModelFactory):
+    class Meta:
+        model = DrupalPublishUuidConfig
+
+
+class ProfileImageDownloadConfigFactory(factory.DjangoModelFactory):
+    class Meta:
+        model = ProfileImageDownloadConfig

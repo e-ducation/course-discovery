@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 import waffle
 from django.conf import settings
 from django.contrib.auth.models import Group
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.urls import reverse
 from django.utils import timezone
@@ -14,6 +15,7 @@ from django_extensions.db.models import TimeStampedModel
 from django_fsm import FSMField, transition
 from guardian.shortcuts import get_objects_for_user
 from simple_history.models import HistoricalRecords
+from solo.models import SingletonModel
 from sortedm2m.fields import SortedManyToManyField
 from stdimage.models import StdImageField
 from taggit.managers import TaggableManager
@@ -28,6 +30,8 @@ from course_discovery.apps.publisher import emails
 from course_discovery.apps.publisher.choices import (
     CourseRunStateChoices, CourseStateChoices, InternalUserRole, PublisherUserRole
 )
+from course_discovery.apps.publisher.constants import PUBLISHER_ENABLE_READ_ONLY_FIELDS
+from course_discovery.apps.publisher.exceptions import CourseRunEditException
 from course_discovery.apps.publisher.utils import is_email_notification_enabled, is_internal_user, is_publisher_admin
 from course_discovery.apps.publisher.validators import ImageMultiSizeValidator
 
@@ -66,6 +70,9 @@ class Course(TimeStampedModel, ChangedByMixin):
     syllabus = models.TextField(default=None, null=True, blank=True)
     prerequisites = models.TextField(default=None, null=True, blank=True, verbose_name=_('Prerequisites'))
     learner_testimonial = models.TextField(default=None, null=True, blank=True, verbose_name=_('Learner Testimonials'))
+    additional_information = models.TextField(
+        default=None, null=True, blank=True, verbose_name=_('Additional Information')
+    )
     primary_subject = models.ForeignKey(
         Subject, default=None, null=True, blank=True, related_name='publisher_courses_primary'
     )
@@ -91,6 +98,8 @@ class Course(TimeStampedModel, ChangedByMixin):
     faq = models.TextField(default=None, null=True, blank=True, verbose_name=_('FAQ'))
     video_link = models.URLField(default=None, null=True, blank=True, verbose_name=_('Video Link'))
     version = models.IntegerField(default=SEAT_VERSION, verbose_name='Workflow Version')
+
+    has_ofac_restrictions = models.BooleanField(default=False, verbose_name=_('Course Has OFAC Restrictions'))
 
     # temp fields for data migrations only.
     course_metadata_pk = models.PositiveIntegerField(null=True, blank=True, verbose_name=_('Course Metadata Course PK'))
@@ -273,6 +282,8 @@ class CourseRun(TimeStampedModel, ChangedByMixin):
         (PRIORITY_LEVEL_5, _('Level 5')),
     )
 
+    DEFAULT_PACING_TYPE = CourseRunPacing.Instructor
+
     course = models.ForeignKey(Course, related_name='publisher_course_runs')
     lms_course_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
 
@@ -281,7 +292,7 @@ class CourseRun(TimeStampedModel, ChangedByMixin):
     certificate_generation = models.DateTimeField(null=True, blank=True)
     pacing_type = models.CharField(
         max_length=255, db_index=True, null=True, blank=True, choices=CourseRunPacing.choices,
-        validators=[CourseRunPacing.validator]
+        validators=[CourseRunPacing.validator], default=DEFAULT_PACING_TYPE
     )
     staff = SortedManyToManyField(Person, blank=True, related_name='publisher_course_runs_staffed')
     min_effort = models.PositiveSmallIntegerField(
@@ -335,8 +346,8 @@ class CourseRun(TimeStampedModel, ChangedByMixin):
     # will be used to download the image and save into course model --> course image.
     card_image_url = models.URLField(null=True, blank=True, verbose_name='canonical course run image')
 
-    short_description_override = models.CharField(
-        max_length=255, default=None, null=True, blank=True,
+    short_description_override = models.TextField(
+        default=None, null=True, blank=True,
         help_text=_(
             "Short description specific for this run of a course. Leave this value blank to default to "
             "the parent course's short_description attribute."))
@@ -351,6 +362,11 @@ class CourseRun(TimeStampedModel, ChangedByMixin):
         help_text=_(
             "Full description specific for this run of a course. Leave this value blank to default to "
             "the parent course's full_description attribute."))
+
+    has_ofac_restrictions = models.BooleanField(
+        default=False,
+        verbose_name=_('Has OFAC Restriction Text')
+    )
 
     history = HistoricalRecords()
 
@@ -376,6 +392,12 @@ class CourseRun(TimeStampedModel, ChangedByMixin):
             return urljoin(self.course.partner.studio_url, path)
 
         return None
+
+    @property
+    def studio_schedule_and_details_url(self):
+        if self.lms_course_id and self.course.partner and self.course.partner.studio_url:
+            path = 'settings/details/{lms_course_id}'.format(lms_course_id=self.lms_course_id)
+            return urljoin(self.course.partner.studio_url, path)
 
     @property
     def has_valid_staff(self):
@@ -434,6 +456,136 @@ class CourseRun(TimeStampedModel, ChangedByMixin):
 
     def get_absolute_url(self):
         return reverse('publisher:publisher_course_run_detail', kwargs={'pk': self.id})
+
+    @cached_property
+    def discovery_counterpart_latest_by_start_date(self):
+        try:
+            discovery_course = self.course.discovery_counterpart
+            return discovery_course.course_runs.latest('start')
+        except ObjectDoesNotExist:
+            logger.info(
+                'Related discovery course run not found for [%s] with partner [%s] ',
+                self.course.key,
+                self.course.partner
+            )
+            return None
+
+    @cached_property
+    def discovery_counterpart(self):
+        try:
+            discovery_course = self.course.discovery_counterpart
+            return discovery_course.course_runs.get(key=self.lms_course_id)
+        except ObjectDoesNotExist:
+            logger.info(
+                'Related discovery course run not found for [%s] with partner [%s] ',
+                self.course.key,
+                self.course.partner
+            )
+            return None
+
+    @property
+    def pacing_type_temporary(self):
+        """
+            This property serves as a temporary intermediary in order to support a waffle
+            switch that will toggle between the original database backed pacing_type value
+            and a new read-only value that is pulled from course_discovery.
+
+            Once the switch is no longer needed, the pacing_type field will be removed,
+            and this property will be renamed appropriately.
+
+            The progress of the above work will be tracked in the following ticket:
+            https://openedx.atlassian.net/browse/EDUCATOR-3488.
+        """
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            discovery_counterpart = self.discovery_counterpart
+
+            if discovery_counterpart and discovery_counterpart.pacing_type:
+                return discovery_counterpart.pacing_type
+            else:
+                return self.DEFAULT_PACING_TYPE
+        else:
+            return self.pacing_type
+
+    @pacing_type_temporary.setter
+    def pacing_type_temporary(self, value):
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            raise CourseRunEditException
+        else:
+            # Treat empty strings as NULL
+            value = value or None
+            self.pacing_type = value
+
+    def get_pacing_type_temporary_display(self):
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            discovery_counterpart = self.discovery_counterpart
+
+            if discovery_counterpart and discovery_counterpart.pacing_type:
+                return discovery_counterpart.get_pacing_type_display()
+
+            return _('Instructor-paced')
+
+        else:
+            return self.get_pacing_type_display()
+
+    @property
+    def start_date_temporary(self):
+        """
+            This property serves as a temporary intermediary in order to support a waffle
+            switch that will toggle between the original database backed start value
+            and a new read-only value that is pulled from course_discovery.
+
+            The start date will need to continue to exist for the write on create,
+            until that functionality is officially moved to Studio creation.
+
+            The progress of the above work will be tracked in the following ticket:
+            https://openedx.atlassian.net/browse/EDUCATOR-3524.
+        """
+        start_date = self.start
+
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            discovery_counterpart = self.discovery_counterpart
+
+            if discovery_counterpart and discovery_counterpart.start:
+                start_date = discovery_counterpart.start
+
+        return start_date
+
+    @start_date_temporary.setter
+    def start_date_temporary(self, value):
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            raise CourseRunEditException
+        else:
+            self.start = value
+
+    @property
+    def end_date_temporary(self):
+        """
+            This property serves as a temporary intermediary in order to support a waffle
+            switch that will toggle between the original database backed end value
+            and a new read-only value that is pulled from course_discovery.
+
+            The end date will need to continue to exist for the write on create,
+            until that functionality is officially moved to Studio creation.
+
+            The progress of the above work will be tracked in the following ticket:
+            https://openedx.atlassian.net/browse/EDUCATOR-3525.
+        """
+        end_date = self.end
+
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            discovery_counterpart = self.discovery_counterpart
+
+            if discovery_counterpart and discovery_counterpart.end:
+                end_date = discovery_counterpart.end
+
+        return end_date
+
+    @end_date_temporary.setter
+    def end_date_temporary(self, value):
+        if waffle.switch_is_active(PUBLISHER_ENABLE_READ_ONLY_FIELDS):
+            raise CourseRunEditException
+        else:
+            self.end = value
 
 
 class Seat(TimeStampedModel, ChangedByMixin):
@@ -800,11 +952,11 @@ class CourseRunState(TimeStampedModel, ChangedByMixin):
         """
         course_run = self.course_run
         return all([
-            course_run.course.course_state.is_approved, course_run.has_valid_seats, course_run.start, course_run.end,
-            course_run.pacing_type, course_run.has_valid_staff, course_run.is_valid_micromasters,
-            course_run.is_valid_professional_certificate, course_run.is_valid_xseries, course_run.language,
-            course_run.transcript_languages.all(), course_run.lms_course_id, course_run.min_effort,
-            course_run.video_language, course_run.length
+            course_run.course.course_state.is_approved, course_run.has_valid_seats, course_run.start_date_temporary,
+            course_run.end, course_run.pacing_type_temporary, course_run.has_valid_staff,
+            course_run.is_valid_micromasters, course_run.is_valid_professional_certificate,
+            course_run.is_valid_xseries, course_run.language, course_run.transcript_languages.all(),
+            course_run.lms_course_id, course_run.min_effort, course_run.video_language, course_run.length
 
         ])
 
@@ -942,3 +1094,11 @@ class PublisherUser(User):
                 with_superuser=False
             ).values_list('organization')
             return queryset.filter(organizations__in=organizations)
+
+
+class DrupalLoaderConfig(SingletonModel):
+    """
+    Configuration for data loaders used in the load_drupal_data command.
+    """
+    course_run_ids = models.TextField(default=None, null=False, blank=False, verbose_name=_('Course Run IDs'))
+    partner_code = models.TextField(default=None, null=False, blank=False, verbose_name=_('Partner Code'))

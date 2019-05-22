@@ -8,7 +8,7 @@ from parler.admin import TranslatableAdmin
 from course_discovery.apps.course_metadata.exceptions import (
     MarketingSiteAPIClientException, MarketingSitePublisherException
 )
-from course_discovery.apps.course_metadata.forms import CourseAdminForm, CreditPathwayAdminForm, ProgramAdminForm
+from course_discovery.apps.course_metadata.forms import CourseAdminForm, PathwayAdminForm, ProgramAdminForm
 from course_discovery.apps.course_metadata.models import *  # pylint: disable=wildcard-import
 
 PUBLICATION_FAILURE_MSG_TPL = _(
@@ -54,13 +54,13 @@ class PositionInline(admin.TabularInline):
     extra = 0
 
 
-class PersonWorkInline(admin.TabularInline):
-    model = PersonWork
+class PersonSocialNetworkInline(admin.TabularInline):
+    model = PersonSocialNetwork
     extra = 0
 
 
-class PersonSocialNetworkInline(admin.TabularInline):
-    model = PersonSocialNetwork
+class PersonAreaOfExpertiseInline(admin.TabularInline):
+    model = PersonAreaOfExpertise
     extra = 0
 
 
@@ -74,10 +74,23 @@ class CourseAdmin(admin.ModelAdmin):
     search_fields = ('uuid', 'key', 'title',)
 
 
+@admin.register(CourseEntitlement)
+class CourseEntitlementAdmin(admin.ModelAdmin):
+    list_display = ['course', 'get_course_number', 'mode']
+
+    def get_course_number(self, obj):
+        return obj.course.number
+
+    get_course_number.short_description = 'Course number'
+
+    raw_id_fields = ['course']
+    search_fields = ['course__title', 'course__number']
+
+
 @admin.register(CourseRun)
 class CourseRunAdmin(admin.ModelAdmin):
     inlines = (SeatInline,)
-    list_display = ('uuid', 'key', 'title',)
+    list_display = ('uuid', 'key', 'title', 'status',)
     list_filter = (
         'course__partner',
         'hidden',
@@ -176,10 +189,12 @@ class ProgramAdmin(admin.ModelAdmin):
               'js/sortable_select.js')
 
 
-@admin.register(CreditPathway)
-class CreditPathwayAdmin(admin.ModelAdmin):
-    form = CreditPathwayAdminForm
-    list_display = ('name', 'org_name', 'partner', 'email', 'destination_url')
+@admin.register(Pathway)
+class PathwayAdmin(admin.ModelAdmin):
+    form = PathwayAdminForm
+    readonly_fields = ('uuid',)
+    list_display = ('name', 'uuid', 'org_name', 'partner', 'email', 'destination_url', 'pathway_type',)
+    search_fields = ('uuid', 'name', 'email', 'destination_url', 'pathway_type',)
 
 
 @admin.register(ProgramType)
@@ -218,6 +233,17 @@ class RankingAdmin(admin.ModelAdmin):
     list_display = ('rank', 'description', 'source')
 
 
+@admin.register(AdditionalPromoArea)
+class AdditionalPromoAreaAdmin(admin.ModelAdmin):
+    list_display = ('title', 'description', 'courses')
+    search_fields = ('description',)
+
+    def courses(self, obj):
+        return ', '.join([
+            course.key for course in obj.extra_description.all()
+        ])
+
+
 class OrganizationUserRoleInline(admin.TabularInline):
     # course-meta-data models are importing in publisher app. So just for safe side
     # to avoid any circular issue importing the publisher model here.
@@ -254,9 +280,9 @@ class TopicAdmin(TranslatableAdmin):
 
 @admin.register(Person)
 class PersonAdmin(admin.ModelAdmin):
-    inlines = (PositionInline, PersonWorkInline, PersonSocialNetworkInline)
-    list_display = ('uuid', 'salutation', 'family_name', 'given_name', 'slug',)
-    list_filter = ('partner',)
+    inlines = (PositionInline, PersonSocialNetworkInline, PersonAreaOfExpertiseInline)
+    list_display = ('uuid', 'salutation', 'family_name', 'given_name', 'bio_language', 'slug',)
+    list_filter = ('partner', 'bio_language')
     ordering = ('salutation', 'family_name', 'given_name', 'uuid',)
     readonly_fields = ('uuid',)
     search_fields = ('uuid', 'salutation', 'family_name', 'given_name', 'slug',)
@@ -311,8 +337,40 @@ class DegreeCourseCurriculumAdmin(admin.ModelAdmin):
 
 @admin.register(Curriculum)
 class CurriculumAdmin(admin.ModelAdmin):
-    list_display = ('name', 'degree')
+    list_display = ('uuid', 'degree')
     inlines = (DegreeProgramCurriculumInline, DegreeCourseCurriculumInline)
+
+
+class CurriculumAdminInline(admin.StackedInline):
+    model = Curriculum
+    extra = 1
+
+
+class IconTextPairingInline(admin.StackedInline):
+    model = IconTextPairing
+    extra = 3
+    verbose_name = "Quick Fact"
+    verbose_name_plural = "Quick Facts"
+
+
+@admin.register(DegreeDeadline)
+class DegreeDeadlineAdmin(admin.ModelAdmin):
+    list_display = ('degree', 'semester', 'name', 'date', 'time')
+
+
+@admin.register(DegreeCost)
+class DegreeCostAdmin(admin.ModelAdmin):
+    list_display = ('degree', 'description', 'amount')
+
+
+class DegreeDeadlineInlineAdmin(admin.StackedInline):
+    model = DegreeDeadline
+    extra = 1
+
+
+class DegreeCostInlineAdmin(admin.StackedInline):
+    model = DegreeCost
+    extra = 1
 
 
 @admin.register(Degree)
@@ -325,17 +383,15 @@ class DegreeAdmin(admin.ModelAdmin):
     ordering = ('title', 'status')
     readonly_fields = ('uuid', )
     search_fields = ('title', 'partner', 'marketing_slug')
-
+    inlines = (CurriculumAdminInline, DegreeDeadlineInlineAdmin, DegreeCostInlineAdmin, IconTextPairingInline)
     # ordering the field display on admin page.
     fields = (
-        'type', 'uuid', 'title', 'subtitle', 'status', 'partner', 'banner_image', 'banner_image_url', 'card_image_url',
-        'marketing_slug', 'overview', 'total_hours_of_effort', 'weeks_to_complete', 'min_hours_effort_per_week',
-        'max_hours_effort_per_week', 'authoring_organizations', 'hidden', 'faq', 'individual_endorsements',
-        'job_outlook_items', 'expected_learning_items', 'instructor_ordering',
-        # The fields below are explicitly on the ``Degree`` model
-        'application_deadline', 'apply_url', 'overall_ranking',
-        'campus_image_mobile', 'campus_image_tablet', 'campus_image_desktop',
-        'rankings',
+        'type', 'uuid', 'status', 'hidden', 'partner', 'authoring_organizations', 'marketing_slug', 'card_image_url',
+        'search_card_ranking', 'search_card_cost', 'search_card_courses', 'overall_ranking', 'campus_image', 'title',
+        'subtitle', 'title_background_image', 'banner_border_color', 'apply_url', 'overview', 'rankings',
+        'application_requirements', 'prerequisite_coursework', 'lead_capture_image', 'lead_capture_list_name',
+        'micromasters_long_title', 'micromasters_long_description', 'micromasters_url', 'micromasters_background_image',
+        'faq', 'costs_fine_print', 'deadlines_fine_print',
     )
 
 # Register children of AbstractNamedModel
@@ -343,8 +399,8 @@ for model in (LevelType, Prerequisite,):
     admin.site.register(model, NamedModelAdmin)
 
 # Register remaining models using basic ModelAdmin classes
-for model in (Image, ExpectedLearningItem, SyllabusItem, PersonSocialNetwork, CourseRunSocialNetwork, JobOutlookItem,
-              DataLoaderConfig):
+for model in (Image, ExpectedLearningItem, SyllabusItem, PersonSocialNetwork, JobOutlookItem, DataLoaderConfig,
+              DeletePersonDupsConfig, DrupalPublishUuidConfig, ProfileImageDownloadConfig, PersonAreaOfExpertise):
     admin.site.register(model)
 
 # add elite extend models

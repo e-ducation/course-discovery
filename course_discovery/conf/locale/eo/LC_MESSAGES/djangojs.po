@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: edx-platform\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2018-07-30 18:18+0000\n"
+"POT-Creation-Date: 2018-12-19 19:38+0000\n"
 "PO-Revision-Date: 2018-04-09 20:13+0000\n"
 "Last-Translator: Muhammad Ayub khan <ayubkhan@edx.org>\n"
 "Language-Team: openedx-translation <openedx-translation@googlegroups.com>\n"
@@ -60,16 +60,68 @@ msgid "Something went wrong!"
 msgstr "Söméthïng wént wröng! Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт αмєт, #"
 
 #: static/js/publisher/instructors.js
+msgid "Type"
+msgstr "Týpé Ⱡ'σяєм ι#"
+
+#: static/js/publisher/instructors.js
+msgid "Facebook"
+msgstr "Fäçéßöök Ⱡ'σяєм ιρѕυм ∂#"
+
+#: static/js/publisher/instructors.js
+msgid "Twitter"
+msgstr "Twïttér Ⱡ'σяєм ιρѕυм #"
+
+#: static/js/publisher/instructors.js
+msgid "Blog"
+msgstr "Blög Ⱡ'σяєм ι#"
+
+#: static/js/publisher/instructors.js
+msgid "Other"
+msgstr "Öthér Ⱡ'σяєм ιρѕ#"
+
+#: static/js/publisher/instructors.js
+msgid "Title"
+msgstr "Tïtlé Ⱡ'σяєм ιρѕ#"
+
+#: static/js/publisher/instructors.js
+msgid "optional"
+msgstr "öptïönäl Ⱡ'σяєм ιρѕυм ∂#"
+
+#: static/js/publisher/instructors.js
+msgid "URL"
+msgstr "ÛRL Ⱡ'σяєм#"
+
+#: static/js/publisher/instructors.js
+msgid "Please specify a type and url for each social link."
+msgstr ""
+"Pléäsé spéçïfý ä týpé änd ürl för éäçh söçïäl lïnk. Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт "
+"αмєт, ¢σηѕє¢тєтυя α#"
+
+#: static/js/publisher/instructors.js
+msgid "Social links with the same type must have different titles."
+msgstr ""
+"Söçïäl lïnks wïth thé sämé týpé müst hävé dïfférént tïtlés. Ⱡ'σяєм ιρѕυм "
+"∂σłσя ѕιт αмєт, ¢σηѕє¢тєтυя α#"
+
+#: static/js/publisher/instructors.js
+msgid "Area of Expertise"
+msgstr "Àréä öf Éxpértïsé Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт αмє#"
+
+#: static/js/publisher/instructors.js
+msgid "Please specify a value for each area of expertise."
+msgstr ""
+"Pléäsé spéçïfý ä välüé för éäçh äréä öf éxpértïsé. Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт "
+"αмєт, ¢σηѕє¢тєтυя α#"
+
+#: static/js/publisher/instructors.js
 msgid "The image size must be smaller than 256kb"
 msgstr ""
 "Thé ïmägé sïzé müst ßé smällér thän 256kß Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт αмєт, "
 "¢σηѕє¢тєтυя #"
 
 #: static/js/publisher/instructors.js
-msgid "The image dimensions must be less than 110 x 110"
-msgstr ""
-"Thé ïmägé dïménsïöns müst ßé léss thän 110 x 110 Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт "
-"αмєт, ¢σηѕє¢тєтυя α#"
+msgid "The image dimensions must be "
+msgstr "Thé ïmägé dïménsïöns müst ßé  Ⱡ'σяєм ιρѕυм ∂σłσя ѕιт αмєт, ¢σηѕє¢#"
 
 #: static/js/publisher/instructors.js
 msgid " Unsupported Image extension"

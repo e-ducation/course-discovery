@@ -8,7 +8,6 @@ from uuid import UUID
 
 import pytz
 from dateutil import rrule
-from django.db.models import Q
 from django.utils.functional import cached_property
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
@@ -16,7 +15,7 @@ from opaque_keys.edx.keys import CourseKey
 from course_discovery.apps.course_metadata.choices import CourseRunPacing, CourseRunStatus
 from course_discovery.apps.course_metadata.data_loaders import AbstractDataLoader
 from course_discovery.apps.course_metadata.models import (
-    Course, CourseRun, LevelType, Organization, Person, Position, Subject
+    AdditionalPromoArea, Course, CourseRun, LevelType, Organization, Person, Subject
 )
 from course_discovery.apps.course_metadata.utils import MarketingSiteAPIClient
 from course_discovery.apps.ietf_language_tags.models import LanguageTag
@@ -250,94 +249,6 @@ class SponsorMarketingSiteDataLoader(AbstractMarketingSiteDataLoader):
         return sponsor
 
 
-class PersonMarketingSiteDataLoader(AbstractMarketingSiteDataLoader):
-    @property
-    def node_type(self):
-        return 'person'
-
-    def get_query_kwargs(self):
-        kwargs = super(PersonMarketingSiteDataLoader, self).get_query_kwargs()
-        # NOTE (CCB): We need to include the nested field_collection_item data since that is where
-        # the positions are stored.
-        kwargs['load-entity-refs'] = 'file,field_collection_item'
-        return kwargs
-
-    def process_node(self, data):
-        uuid = UUID(data['uuid'])
-        slug = data['url'].split('/')[-1]
-        defaults = {
-            'salutation': data['field_person_salutation'],
-            'given_name': data['field_person_first_middle_name'],
-            'family_name': data['field_person_last_name'],
-            'bio': self.clean_html(data['field_person_resume']['value']),
-            'profile_image_url': self._get_nested_url(data.get('field_person_image')),
-            'slug': slug,
-            'profile_url': data['url'],
-        }
-        person, created = Person.objects.update_or_create(uuid=uuid, partner=self.partner, defaults=defaults)
-
-        # NOTE (CCB): The AutoSlug field kicks in at creation time. We need to apply overrides in a separate
-        # operation.
-        if created:
-            person_salutation = data['field_person_salutation']
-            person_given_name = data['field_person_first_middle_name']
-            person_family_name = data['field_person_last_name']
-
-            logger.info(
-                u'Person created in marketing data loader, %s %s %s with uuid: %s and slug: %s',
-                person_salutation,
-                person_family_name,
-                person_given_name,
-                uuid,
-                slug
-            )
-            person.slug = slug
-            person.save()
-
-        self.set_position(person, data)
-
-        logger.info('Processed person with UUID [%s].', uuid)
-        return person
-
-    def set_position(self, person, data):
-        uuid = data['uuid']
-
-        try:
-            data = data.get('field_person_positions', [])
-
-            if data:
-                data = data[0]
-                # NOTE (CCB): This is not a typo. The field is misspelled on the marketing site.
-                titles = data['field_person_position_tiltes']
-
-                if titles:
-                    title = titles[0]
-
-                    # NOTE (CCB): Not all positions are associated with organizations.
-                    organization = None
-                    organization_name = (data.get('field_person_position_org_link', {}) or {}).get('title')
-
-                    if organization_name:
-                        organization = Organization.objects.filter(
-                            Q(name__iexact=organization_name) | Q(key__iexact=organization_name) & Q(
-                                partner=self.partner)).first()
-
-                    defaults = {
-                        'title': title,
-                        'organization': None,
-                        'organization_override': None,
-                    }
-
-                    if organization:
-                        defaults['organization'] = organization
-                    else:
-                        defaults['organization_override'] = organization_name
-
-                    Position.objects.update_or_create(person=person, defaults=defaults)
-        except:  # pylint: disable=bare-except
-            logger.exception('Failed to set position for person with UUID [%s]!', uuid)
-
-
 class CourseMarketingSiteDataLoader(AbstractMarketingSiteDataLoader):
     LANGUAGE_MAP = {
         'English': 'en-us',
@@ -530,6 +441,7 @@ class CourseMarketingSiteDataLoader(AbstractMarketingSiteDataLoader):
             'outcome': (data.get('field_course_what_u_will_learn', {}) or {}).get('value'),
             'syllabus_raw': (data.get('field_course_syllabus', {}) or {}).get('value'),
             'prerequisites_raw': (data.get('field_course_prerequisites', {}) or {}).get('value'),
+            'extra_description': self.get_extra_description(data)
         }
 
         return defaults
@@ -593,6 +505,18 @@ class CourseMarketingSiteDataLoader(AbstractMarketingSiteDataLoader):
     def _extract_language_tags(self, raw_objects_data):
         language_names = [_object['name'].strip() for _object in raw_objects_data]
         return self.get_language_tags_from_names(language_names)
+
+    def get_extra_description(self, raw_objects_data):
+        extra_title = raw_objects_data.get('field_course_extra_desc_title', None)
+        if extra_title == 'null':
+            extra_title = None
+        extra_description = (raw_objects_data.get('field_course_extra_description', {}) or {}).get('value')
+        if extra_title or extra_description:
+            extra, _ = AdditionalPromoArea.objects.get_or_create(
+                title=extra_title,
+                description=extra_description
+            )
+            return extra
 
     def set_authoring_organizations(self, course, data):
         schools = self._get_objects_by_uuid(Organization, data['field_course_school_node'])

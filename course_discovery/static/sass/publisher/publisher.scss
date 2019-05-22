@@ -14,11 +14,6 @@
             @include float(left);
             @include padding(20px, 20px, 20px, 20px);
         }
-
-        .layout-col {
-
-            
-        }
     }
 
     .layout, .layout-flush {
@@ -376,7 +371,7 @@
 
 
 .approval-widget, .course-widgets, .edit-history-widget {
-  
+
     .btn-course-edit, .btn-courserun-edit, .btn-change-state, .btn-preview, .btn-save-preview-url, .btn-edit-preview-url {
         @include padding(2px, 20px, 3px, 20px);
         @include float(right);
@@ -581,6 +576,12 @@
   }
 }
 
+#select2-id_staff-results {
+  // This makes the instructor search result box a little taller, to hold more instructors.
+  // Default was 200px, which was ~2 instructors. At 400px, it's about 3.5 instructors.
+  max-height: 400px;
+}
+
 .parent-course-history {
   @include margin-left(15px);
   margin-top: 10px;
@@ -702,29 +703,8 @@
   height: 120px;
 }
 
-.social-links {
-  text-align: center;
-  margin-top: 20px;
-
-  .heading {
-
-    &.icon {
-      display: inline-block;
-      width: 30%;
-
-      > a {
-        font-weight: bold;
-        font-size: 1.1em;
-        vertical-align: middle;
-        color: #065683;
-      }
-
-      .btn {
-        @include padding(5px, 5px, 5px, 5px);
-        @include margin-left(6px);
-      }
-    }
-  }
+.instructor-list-item-view {
+  margin-top: 10px;
 }
 
 .new-staff {

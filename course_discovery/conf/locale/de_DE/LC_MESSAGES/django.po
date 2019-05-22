@@ -4,7 +4,7 @@
 # This file is distributed under the GNU AFFERO GENERAL PUBLIC LICENSE.
 # 
 # Translators:
-# Abstract Technology <stefania.trabucchi@abstract-technology.de>, 2018
+# Stefania Trabucchi <stefania.trabucchi@abstract-technology.de>, 2018
 # Akif Vohra <akifvohra@gmail.com>, 2017
 # Alexander L. <alexander.lohberg@ufo-style.de>, 2017
 # Bert Krohn <bert.krohn@tum.de>, 2017
@@ -14,13 +14,14 @@
 # Marc Höfken <marchoefken@gmx.de>, 2016
 # johmik <mikulasc@in.tum.de>, 2016
 # Physik Online <elearning@th.physik.uni-frankfurt.de>, 2017
+# Stefania Trabucchi <stefania.trabucchi@abstract-technology.de>, 2018
 msgid ""
 msgstr ""
 "Project-Id-Version: edx-platform\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2018-03-15 20:13+0000\n"
-"PO-Revision-Date: 2018-07-24 09:53+0000\n"
-"Last-Translator: Abstract Technology <stefania.trabucchi@abstract-technology.de>\n"
+"PO-Revision-Date: 2018-11-28 14:16+0000\n"
+"Last-Translator: Stefania Trabucchi <stefania.trabucchi@abstract-technology.de>\n"
 "Language-Team: German (Germany) (http://www.transifex.com/open-edx/edx-platform/language/de_DE/)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -744,7 +745,7 @@ msgstr "Kurs finden"
 
 #: apps/publisher/forms.py
 msgid "Course Start Date"
-msgstr "Datum Kursstart"
+msgstr "Startdatum"
 
 #: apps/publisher/forms.py
 msgid "Course End Date"
@@ -955,7 +956,7 @@ msgstr "Komma getrennte Liste der edx Nutzernamen oder E-Mail-Adressen der Admin
 
 #: apps/publisher/models.py
 msgid "Comma separated list of edX usernames or emails of additional staff."
-msgstr ""
+msgstr "Komma getrennte Liste der edx Nutzernamen oder E-Mail-Adressen der Mitarbeiter."
 
 #: apps/publisher/models.py
 msgid "Professional (with ID verification)"
@@ -1458,7 +1459,7 @@ msgstr "\n                                                Wenn der Kurs nicht ge
 #: apps/publisher/templates/publisher/add_courserun_form.html
 #: apps/publisher/templates/publisher/course_run/edit_run_form.html
 msgid "COURSE START DATE"
-msgstr "Startdatum des Kurses"
+msgstr "Startdatum"
 
 #: apps/publisher/templates/publisher/add_courserun_form.html
 #: apps/publisher/templates/publisher/course_run/edit_run_form.html
@@ -1530,7 +1531,7 @@ msgstr "Kurs importieren"
 #: apps/publisher/templates/publisher/base.html
 #: apps/publisher/templates/publisher/courserun_list.html
 msgid "Dashboard"
-msgstr "Übersicht"
+msgstr "Meine Kurse"
 
 #: apps/publisher/templates/publisher/base.html
 #: apps/publisher/templates/publisher/course_list.html apps/publisher/views.py
@@ -2157,7 +2158,7 @@ msgstr "Programm Verbindung"
 msgid ""
 "If this course is part of a program, select the program type, and then enter"
 " the name of the program."
-msgstr ""
+msgstr "Wenn Sie diesen Kurs im Rahmen eines Programmes belegen müssen, wählen Sie die Programmart und geben Sie den Namen des Programmes ein."
 
 #: apps/publisher/templates/publisher/course_run/edit_run_form.html
 msgid "COURSE STAFF"
@@ -2171,7 +2172,7 @@ msgstr "Der Hauptdozent oder die Hauptdozenten für diesen Kurs"
 msgid ""
 "Make sure that you search for an instructor before you create a new "
 "instructor."
-msgstr ""
+msgstr "Bevor Sie einen neuen Dozent erstellen, kontrollieren Sie, dass dieser Dozent noch nicht angelegt ist."
 
 #: apps/publisher/templates/publisher/course_run/edit_run_form.html
 msgid "Search for Instructor:"
@@ -2244,7 +2245,7 @@ msgstr "End Datum (Zeit in UTC)"
 
 #: apps/publisher/templates/publisher/course_run_detail/_all.html
 msgid "Credit Price"
-msgstr ""
+msgstr "Preis"
 
 #: apps/publisher/templates/publisher/course_run_detail/_all.html
 msgid "Course Staff"
@@ -2306,11 +2307,11 @@ msgstr "Einschreib Möglichkeiten"
 
 #: apps/publisher/templates/publisher/course_run_detail/_credit_seat.html
 msgid "Credit Seats"
-msgstr ""
+msgstr "Plätze"
 
 #: apps/publisher/templates/publisher/course_run_detail/_credit_seat.html
 msgid "Credit Provider"
-msgstr ""
+msgstr "Anbieter"
 
 #: apps/publisher/templates/publisher/course_run_detail/_credit_seat.html
 #: apps/publisher/templates/publisher/course_run_detail/_seats.html
@@ -2324,7 +2325,7 @@ msgstr "Währung"
 
 #: apps/publisher/templates/publisher/course_run_detail/_credit_seat.html
 msgid "Credit Hours"
-msgstr ""
+msgstr "Stunden"
 
 #: apps/publisher/templates/publisher/course_run_detail/_credit_seat.html
 #: apps/publisher/templates/publisher/course_run_detail/_seats.html
@@ -2520,7 +2521,7 @@ msgstr "Kurs $ (minimum)"
 
 #: apps/publisher/templates/publisher/course_run_detail/_salesforce.html
 msgid "Credit $ (minimum)"
-msgstr ""
+msgstr "Credit $ (Minimum)"
 
 #: apps/publisher/templates/publisher/course_run_detail/_salesforce.html
 msgid "Self Paced?"
@@ -2636,7 +2637,7 @@ msgstr "Vorschau"
 
 #: apps/publisher/templates/publisher/courserun_list.html
 msgid "Studio Request"
-msgstr ""
+msgstr "Studio Anfrage"
 
 #: apps/publisher/templates/publisher/courserun_list.html
 msgid "Published About Pages"
@@ -2664,7 +2665,7 @@ msgstr "Status"
 #: apps/publisher/templates/publisher/email/studio_instance_created.html
 #: apps/publisher/templates/publisher/email/studio_instance_created.txt
 msgid "Course start date"
-msgstr "Datum Kursbeginn"
+msgstr "Stardatum"
 
 #: apps/publisher/templates/publisher/dashboard/_in_preview.html
 msgid "Approved since "
@@ -2909,7 +2910,7 @@ msgstr ""
 #: apps/publisher/templates/publisher/email/course_created.html
 #, python-format
 msgid "Dear %(project_coordinator_name)s,"
-msgstr ""
+msgstr "Sehr geehrte/-er Frau/Herr %(project_coordinator_name)s,"
 
 #: apps/publisher/templates/publisher/email/course_created.html
 #, python-format
@@ -3023,7 +3024,7 @@ msgid ""
 "Note: This email address is unable to receive replies. For questions or "
 "comments, contact <a "
 "href=\"mailto:%(contact_us_email)s\">%(contact_us_email)s</a>."
-msgstr ""
+msgstr "Hinweis: Bitte antworten Sie nicht auf diese E-Mail Adresse. Wenn Sie Fragen haben oder Hilfe benötigen kontaktieren Sie uns unter <a href=\"mailto:%(contact_us_email)s\">%(contact_us_email)s</a>."
 
 #: apps/publisher/templates/publisher/email/course_run/published.html
 #: apps/publisher/templates/publisher/email/course_run/published.txt
@@ -3038,7 +3039,7 @@ msgstr ""
 msgid ""
 "%(link_start)s%(preview_url)s%(link_middle)sView this About page on "
 "edx.org.%(link_end)s"
-msgstr ""
+msgstr "%(link_start)s%(preview_url)s%(link_middle)s Diese Seite in edx.org ansehen.%(link_end)s"
 
 #: apps/publisher/templates/publisher/email/course_run/published.txt
 #, python-format
@@ -3345,7 +3346,7 @@ msgstr ""
 msgid ""
 "Enrollment track cannot be unset or changed from verified or professional to"
 " audit or credit."
-msgstr ""
+msgstr "Einschreibungs Modus kann nicht von Verifiziert/Professional zu Gasthörer/Credit zurückgesetzt werden."
 
 #: apps/publisher/views.py
 #, python-brace-format
@@ -3433,7 +3434,7 @@ msgstr "{subject_desc} {title}"
 #: apps/publisher_comments/emails.py
 #, python-brace-format
 msgid "Preview declined: {course_name}"
-msgstr "Preview declined: {course_name}"
+msgstr "Vorschau ansehen, nicht möglich: {course_name}"
 
 #: apps/publisher_comments/models.py
 msgid "Default"

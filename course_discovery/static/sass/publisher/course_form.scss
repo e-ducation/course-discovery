@@ -97,7 +97,7 @@
         background-color: #fefefe;
         margin: 5% auto;
         border: 20px solid rgba(215, 215, 215, 1);
-        width: 50%;
+        width: 55%;
         min-width: 380px;
 
         .staff-image-icon {
@@ -160,12 +160,31 @@
             @include text-align(right);
         }
 
-        #email {
-            margin-bottom: 5px;
+        .instructor-list-field {
+          display: inline-block;
         }
 
-        .email-field {
-            margin-bottom: 20px;
+        .instructor-list-input {
+          @include margin-right(5px);
+          height: 44px;
+          margin-top: 5px;
+        }
+
+        .social-link-select-type {
+          height: 43px;
+        }
+
+        .remove-instructor-list-item-btn {
+          height: 44px;
+          width: 44px;
+          font-size: 25px;
+          padding-top: 7px;
+          padding-bottom: 9px;
+          margin-bottom: 20px;
+        }
+
+        .add-instructor-list-item-btn {
+          margin-bottom: 20px;
         }
     }
 }
@@ -182,4 +201,16 @@
 
 .error-text {
     color: #b20610;
+}
+
+.recommended-text {
+    .icon {
+        display: none;
+    }
+    &.alert-warning {
+        .icon {
+            display: inline;
+            @include margin-right(10px);
+        }
+    }
 }

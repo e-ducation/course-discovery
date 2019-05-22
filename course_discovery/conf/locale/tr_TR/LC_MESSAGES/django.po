@@ -4,16 +4,16 @@
 # This file is distributed under the GNU AFFERO GENERAL PUBLIC LICENSE.
 # 
 # Translators:
-# abdurrahmantufekci <map.tufekci@gmail.com>, 2016
+# e3b3f2a569bf1a7e02f24d7ea86f47f5, 2016
 # Ali Işıngör <ali@artistanbul.io>, 2017-2018
-# abdurrahmantufekci <map.tufekci@gmail.com>, 2016
+# e3b3f2a569bf1a7e02f24d7ea86f47f5, 2016
 # Nilgün Güleç <gulecnilgun@gmail.com>, 2016
 msgid ""
 msgstr ""
 "Project-Id-Version: edx-platform\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2018-03-15 20:13+0000\n"
-"PO-Revision-Date: 2018-07-06 13:27+0000\n"
+"PO-Revision-Date: 2018-10-04 10:03+0000\n"
 "Last-Translator: Ali Işıngör <ali@artistanbul.io>\n"
 "Language-Team: Turkish (Turkey) (http://www.transifex.com/open-edx/edx-platform/language/tr_TR/)\n"
 "MIME-Version: 1.0\n"
@@ -2418,7 +2418,7 @@ msgstr "Kapat"
 
 #: apps/publisher/templates/publisher/course_run_detail/_preview_accept_popup.html
 msgid "Accept About Page Preview"
-msgstr ""
+msgstr "Hakkında Sayfası Önizlemesini Kabul Et"
 
 #: apps/publisher/templates/publisher/course_run_detail/_preview_accept_popup.html
 msgid ""
@@ -2551,7 +2551,7 @@ msgstr "Eğitim Şekli"
 
 #: apps/publisher/templates/publisher/course_run_detail/_widgets.html
 msgid "Reason for declining preview"
-msgstr ""
+msgstr "Önizlemeyi reddetme nedeni"
 
 #: apps/publisher/templates/publisher/course_run_detail/course_run_detail.html
 #, python-format

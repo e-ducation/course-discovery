@@ -32,6 +32,9 @@ $(document).ready(function () {
 
     $('#add-instructor-btn').click(function (e) {
         var editMode = $(this).hasClass('edit-mode'),
+            socialLinks,
+            urlsDetailed,
+            socialLinkError,
             requestType,
             personData,
             url = $(this).data('url'),
@@ -41,28 +44,39 @@ $(document).ready(function () {
             addModalError(gettext("Please upload a instructor image."));
             return;
         }
+
+        socialLinks = getSocialLinks();
+        urlsDetailed = socialLinks.socialLinksArray;
+        socialLinkError = socialLinks.error;
+        if (socialLinkError) {
+            addModalError(socialLinkError);
+            return;
+        }
+        areasOfExpertiseObj = getAreasOfExpertise();
+        areasOfExpertise = areasOfExpertiseObj.areasOfExpertiseArray;
+        areasOfExpertiseError = areasOfExpertiseObj.error;
+        if (areasOfExpertiseError) {
+            addModalError(areasOfExpertiseError);
+            return;
+        }
         personData = {
             'given_name': $('#given-name').val(),
             'family_name': $('#family-name').val(),
             'bio': $('#bio').val(),
-            'email': $('#email').val(),
             'profile_image': $('.select-image').attr('src'),
             'position': getFormInstructorPosition(),
-            'works': $('#majorWorks').val().split('\n'),
-            'urls': {
-                facebook: $('#facebook').val(),
-                twitter: $('#twitter').val(),
-                blog: $('#blog').val()
-            }
+            'major_works': $('#majorWorks').val(),
+            'urls_detailed': urlsDetailed,
+            'areas_of_expertise': areasOfExpertise,
         };
 
         if (editMode) {
             requestType = "PATCH";
-            personData['uuid'] = uuid;
+            personData.uuid = uuid;
             url = url + uuid + '/';
 
             if (!$('.select-image').hasClass('image-updated')) {
-                delete personData['profile_image'];
+                delete personData.profile_image;
             }
 
         } else {
@@ -81,15 +95,12 @@ $(document).ready(function () {
                 $('#bio').val('');
                 $('.select-image').attr('src', '').removeClass('image-updated');
                 $('#majorWorks').val('');
-                $('#facebook').val('');
-                $('#twitter').val('');
-                $('#blog').val('');
                 clearModalError();
                 closeModal(e, $('#addInstructorModal'));
                 if (editMode) {
-                    loadInstructor(response['uuid'], editMode)
+                    loadInstructor(response.uuid, editMode)
                 } else {
-                    loadInstructor(response['uuid'])
+                    loadInstructor(response.uuid)
                 }
             },
             error: function (response) {
@@ -99,6 +110,156 @@ $(document).ready(function () {
         });
     });
 });
+
+var newElementCount = 1;
+$(document).on('click', '.add-instructor-list-item-btn', function (e) {
+    var $btn = $(e.target)
+    e.preventDefault();
+    // We are prepending new instructor list items with the string new to distinguish between newly
+    // created items and existing ones. When sending these to the backend, we will be able
+    // to indicate whether an item should be updated or created.
+    if ($btn.hasClass('js-add-social-link-btn')) { addNewSocialLink('new' + newElementCount); }
+    else if ($btn.hasClass('js-add-area-of-expertise-btn')) { addNewAreaOfExpertise('new' + newElementCount); }
+    newElementCount++;
+});
+
+
+$(document).on('click', '.remove-instructor-list-item-btn', function (e) {
+    $(e.target.parentElement).remove();
+});
+
+function addNewSocialLink(id, type, title, url) {
+    var id = id || '',
+        type = type || '',
+        title = title || '',
+        url = url || '',
+        socialLinksWrapper = $('.js-social-links-wrapper'),
+        linkHtml = '<div class="social-link" data-id="' + id + '">\
+                        <label class="instructor-list-field" for="social-link-type-' + id + '">' + gettext('Type') +
+                            '<select class="instructor-list-input social-link-select-type" name="link-type" \
+                            id="social-link-type-' + id + '">\
+                                <option disabled selected></option>\
+                                <option value="facebook">' + gettext('Facebook') + '</option>\
+                                <option value="twitter">' + gettext('Twitter') + '</option>\
+                                <option value="blog">' + gettext('Blog') + '</option>\
+                                <option value="others">' + gettext('Other') + '</option>\
+                            </select>\
+                        </label>\
+                        <label class="instructor-list-field" for="social-link-title-' + id + '">' + gettext('Title') +
+                            '<span class="optional"> - ' + gettext('optional') + '</span>\
+                            <input class="instructor-list-input field-input input-text" type="text" id="social-link-title-' + id + '"/>\
+                        </label>\
+                        <label class="instructor-list-field" for="social-link-url-' + id + '">' + gettext('URL') +
+                            '<input class="instructor-list-input field-input input-text" type="text" id="social-link-url-' + id + '"/>\
+                        </label>\
+                        <button class="remove-instructor-list-item-btn fa fa-close"></button>\
+                    </div>';
+
+    socialLinksWrapper.append(linkHtml);
+    $('#social-link-type-' + id).val(type);
+    $('#social-link-title-' + id).val(title);
+    $('#social-link-url-' + id).val(url);
+}
+
+function getSocialLinks() {
+    var socialLinksArray = [],
+        socialLinks = $('.social-link'),
+        error = '',
+        id,
+        type,
+        title,
+        url,
+        uniquenessTest = [];
+    for (var i = 0; i < socialLinks.length; i++) {
+        type = $('#social-link-type-' + socialLinks[i].dataset.id).val();
+        title = $('#social-link-title-' + socialLinks[i].dataset.id).val();
+        url = $('#social-link-url-' + socialLinks[i].dataset.id).val();
+        id = socialLinks[i].dataset.id;
+
+        if (type === null || url === '') {
+            error = gettext('Please specify a type and url for each social link.');
+            return {
+                socialLinksArray: socialLinksArray,
+                error: error
+            };
+        }
+
+        // There is a uniqueness constraint on titles and types
+        for (var j = 0; j < uniquenessTest.length; j++) {
+            existingLink = uniquenessTest[j];
+            if (title === existingLink.title && type === existingLink.type) {
+                error = gettext('Social links with the same type must have different titles.');
+                return {
+                    socialLinksArray: socialLinksArray,
+                    error: error
+                };
+            }
+        }
+        uniquenessTest.push({'title': title, 'type': type});
+
+        // see comment under on click of #add-social-link-btn
+        if (id.includes('new')) id = '';
+
+        socialLinksArray.push({
+            'id': parseInt(id),
+            'type': type,
+            'title': title,
+            'url': url,
+        });
+    }
+    return {
+        socialLinksArray: socialLinksArray,
+        error: error
+    };
+}
+
+function addNewAreaOfExpertise(id, value) {
+    var id = id || '',
+        value = value || '',
+        areasOfExpertiseWrapper = $('.js-areas-of-expertise-wrapper'),
+        linkHtml = '<div class="area-of-expertise" data-id="' + id + '">\
+                        <label class="instructor-list-field" for="area-of-expertise-value-' + id + '">' +
+                        gettext('Area of Expertise') +
+                            '<input class="instructor-list-input field-input input-text" type="text"\
+                            id="area-of-expertise-value-' + id + '"/>\
+                        </label>\
+                        <button class="remove-instructor-list-item-btn fa fa-close"></button>\
+                    </div>';
+
+    areasOfExpertiseWrapper.append(linkHtml);
+    $('#area-of-expertise-value-' + id).val(value);
+}
+
+function getAreasOfExpertise() {
+    var areasOfExpertiseArray = [],
+        areasOfExpertise = $('.area-of-expertise'),
+        error = '',
+        value;
+    for (var i = 0; i < areasOfExpertise.length; i++) {
+        value = $('#area-of-expertise-value-' + areasOfExpertise[i].dataset.id).val();
+        id = areasOfExpertise[i].dataset.id;
+
+        if (value === '') {
+            error = gettext('Please specify a value for each area of expertise.');
+            return {
+                areasOfExpertiseArray: areasOfExpertiseArray,
+                error: error
+            };
+        }
+
+        // see comment under on click of #add-area-of-expertise-btn
+        if (id.includes('new')) id = '';
+
+        areasOfExpertiseArray.push({
+            'id': parseInt(id),
+            'value': value,
+        });
+    }
+    return {
+        areasOfExpertiseArray: areasOfExpertiseArray,
+        error: error
+    };
+}
 
 function getFormInstructorPosition () {
     var org_override_element_value = $('#organization_override').val(),
@@ -135,8 +296,10 @@ function loadSelectedImage (input) {
                 reader.addEventListener("load", function (e) {
                     var image = new Image();
                     image.addEventListener("load", function () {
-                        if (image.width > imageDimension && image.height > imageDimension) {
-                            addModalError(gettext("The image dimensions must be less than 110 x 110"));
+                        if (image.width !== imageDimension || image.height !== imageDimension) {
+                            addModalError(
+                                gettext("The image dimensions must be " + imageDimension + "×" + imageDimension)
+                            );
                             $('.select-image').attr('src', imgPath).removeClass('image-updated');
                             $('#staffImageSelect').val('');
                         }
@@ -176,7 +339,6 @@ function renderSelectedInstructor(id, name, image, uuid, organization_id, edit_i
         instructorHtmlStart = '<div class="instructor" id= "instructor_' + id + '"><div><img src="' + image + '"></div><div>',
         instructorHtmlEnd = '<b>' + name + '</b></div></div>',
         controlOptions = '<a class="delete" id="' + id + '"href="#"><i class="fa fa-trash-o fa-fw"></i></a>';
-
 
     var user_is_course_team = course_user_role === "course_team";
     if (organization_id != "None" && user_organizations_ids != "[]"){
@@ -227,9 +389,9 @@ function loadInstructor(uuid, editMode) {
     $.getJSON({
         url: url,
         success: function (data) {
-            if (data['results'].length) {
+            if (data.results.length) {
                 // with uuid there will be only one instructor
-                instructor = data['results'][0];
+                instructor = data.results[0];
                 id = instructor.id;
                 label = $.parseHTML(instructor.text);
                 image_source = $(label).find('img').attr('src');
@@ -272,31 +434,41 @@ $(document).on('click', '.selected-instructor a.edit', function (e) {
     $.getJSON({
         url: btnInstructor.data('url') + uuid,
         success: function (data) {
-            if (data['position'] == null){
+            if (data.position == null){
                 $('#org_override_container').hide();
                 $('#org_container').show();
             }
-            else if (data['position']['organization_id'] == null){
-                $('#organization_override').val(data['position']['organization_override']);
-                $('#title').val(data['position']['title']);
+            else if (data.position.organization_id == null){
+                $('#organization_override').val(data.position.organization_override);
+                $('#title').val(data.position.title);
                 $('#org_container').hide();
                 $('#org_override_container').show();
             }
             else {
-                $('#id_organization').val(data['position']['organization_id']);
-                $('#title').val(data['position']['title']);
+                $('#id_organization').val(data.position.organization_id);
+                $('#title').val(data.position.title);
                 $('#org_override_container').hide();
                 $('#org_container').show();
             }
-            $('.select-image').attr('src', data['profile_image_url']);
-            $('#given-name').val(data['given_name']);
-            $('#family-name').val(data['family_name']);
-            $('#email').val(data['email']);
-            $('#bio').val(data['bio']);
-            $('#majorWorks').val(data['works'].join('\n'));
-            $('#facebook').val(data['urls']['facebook']);
-            $('#twitter').val(data['urls']['twitter']);
-            $('#blog').val(data['urls']['blog']);
+            $('.select-image').attr('src', data.profile_image_url);
+            $('#given-name').val(data.given_name);
+            $('#family-name').val(data.family_name);
+            $('#bio').val(data.bio);
+            $('#majorWorks').val(data.major_works);
+            for (var i = 0; i < data.urls_detailed.length; i++) {
+                addNewSocialLink(
+                    data.urls_detailed[i].id,
+                    data.urls_detailed[i].type,
+                    data.urls_detailed[i].title,
+                    data.urls_detailed[i].url,
+                );
+            }
+            for (var i = 0; i < data.areas_of_expertise.length; i++) {
+                addNewAreaOfExpertise(
+                    data.areas_of_expertise[i].id,
+                    data.areas_of_expertise[i].value,
+                );
+            }
         }
     });
 });

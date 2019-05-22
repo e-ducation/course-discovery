@@ -1,5 +1,8 @@
+# -*- coding: utf-8 -*-
+
 import datetime
 import itertools
+import uuid
 from decimal import Decimal
 
 import ddt
@@ -20,8 +23,9 @@ from course_discovery.apps.core.tests.helpers import make_image_file
 from course_discovery.apps.core.utils import SearchQuerySetWrapper
 from course_discovery.apps.course_metadata.choices import CourseRunStatus, ProgramStatus
 from course_discovery.apps.course_metadata.models import (
-    FAQ, AbstractMediaModel, AbstractNamedModel, AbstractValueModel, CorporateEndorsement, Course, CourseRun,
-    Endorsement, Ranking, Seat, SeatType, Subject, Topic
+    FAQ, AbstractMediaModel, AbstractNamedModel, AbstractTitleDescriptionModel, AbstractValueModel,
+    CorporateEndorsement, Course, CourseRun, Curriculum, DegreeCost, DegreeDeadline, Endorsement,
+    Ranking, Seat, SeatType, Subject, Topic
 )
 from course_discovery.apps.course_metadata.publishers import (
     CourseRunMarketingSitePublisher, ProgramMarketingSitePublisher
@@ -45,6 +49,10 @@ class TestCourse:
         query = 'title:' + title
         assert set(Course.search(query)) == expected
 
+    def test_wildcard_search(self):
+        expected = set(factories.CourseFactory.create_batch(3))
+        assert set(Course.search('*')) == expected
+
     def test_image_url(self):
         course = factories.CourseFactory()
         assert course.image_url == course.image.small.url
@@ -58,6 +66,35 @@ class TestCourse:
 
         course.image = None
         assert course.original_image_url is None
+
+    def test_first_enrollable_paid_seat_price(self):
+        """
+        Verify that `first_enrollable_paid_seat_price` property for a course
+        returns price of first paid seat of first active course run.
+        """
+        now = datetime.datetime.now(pytz.UTC)
+        active_course_end = now + datetime.timedelta(days=60)
+        open_enrollment_end = now + datetime.timedelta(days=30)
+
+        course = factories.CourseFactory()
+        # Create and active course run with end date in future and enrollment_end in future.
+        course_run = CourseRunFactory(
+            course=course,
+            end=active_course_end,
+            enrollment_end=open_enrollment_end
+        )
+        # Create a seat with 0 price and verify that the course field
+        # `first_enrollable_paid_seat_price` returns None
+        factories.SeatFactory.create(course_run=course_run, type='verified', price=0, sku='ABCDEF')
+        assert course_run.first_enrollable_paid_seat_price is None
+        assert course.first_enrollable_paid_seat_price is None
+
+        # Now create a seat with some price and verify that the course field
+        # `first_enrollable_paid_seat_price` now returns the price of that
+        # payable seat
+        factories.SeatFactory.create(course_run=course_run, type='verified', price=100, sku='ABCDEF')
+        assert course_run.first_enrollable_paid_seat_price == 100
+        assert course.first_enrollable_paid_seat_price == 100
 
 
 @ddt.ddt
@@ -126,6 +163,13 @@ class CourseRunTests(TestCase):
         query = 'title:' + title
         actual_sorted = sorted(SearchQuerySetWrapper(CourseRun.search(query)), key=lambda course_run: course_run.key)
         expected_sorted = sorted(course_runs, key=lambda course_run: course_run.key)
+        self.assertEqual(actual_sorted, expected_sorted)
+
+    def test_wildcard_search(self):
+        """ Verify the method returns an unfiltered queryset of course runs. """
+        course_runs = factories.CourseRunFactory.create_batch(3)
+        actual_sorted = sorted(SearchQuerySetWrapper(CourseRun.search('*')), key=lambda course_run: course_run.key)
+        expected_sorted = sorted(course_runs + [self.course_run], key=lambda course_run: course_run.key)
         self.assertEqual(actual_sorted, expected_sorted)
 
     def test_seat_types(self):
@@ -253,6 +297,14 @@ class CourseRunTests(TestCase):
         course_run = factories.CourseRunFactory.create()
         factories.SeatFactory.create(course_run=course_run, type='verified', price=10, sku='ABCDEF')
         self.assertEqual(course_run.first_enrollable_paid_seat_sku(), 'ABCDEF')
+
+    def test_first_enrollable_paid_seat_price(self):
+        """
+        Verify that first_enrollable_paid_seat_price returns price of first paid seat.
+        """
+        course_run = factories.CourseRunFactory.create()
+        factories.SeatFactory.create(course_run=course_run, type='verified', price=10, sku='ABCDEF')
+        self.assertEqual(course_run.first_enrollable_paid_seat_price, 10)
 
     @ddt.data(
         # Case 1: Return None when there are no enrollable paid Seats.
@@ -459,24 +511,25 @@ class PersonTests(TestCase):
         expected = self.person.given_name
         self.assertEqual(self.person.full_name, expected)
 
+    def test_unicode_slug(self):
+        """ Verify the slug is reasonable with a unicode name. """
+        self.person = factories.PersonFactory(given_name='商汤科', family_name='')
+        self.assertEqual(self.person.slug, 'shang-tang-ke')
+
     def test_get_profile_image_url(self):
         """
-        Verify that property returns profile_image_url if profile_image_url
-        exists other wise it returns uploaded image url.
+        Verify that property returns profile_image_url, which should always be the
+        profile_image.url.
         """
         self.assertEqual(self.person.get_profile_image_url, self.person.profile_image.url)
 
         # create another person with out profile_image_url
-        person = factories.PersonFactory(profile_image_url=None)
+        person = factories.PersonFactory()
         self.assertEqual(person.get_profile_image_url, person.profile_image.url)
 
         # create another person with out profile_image
         person = factories.PersonFactory(profile_image=None)
-        self.assertEqual(person.get_profile_image_url, person.profile_image_url)
-
-        # create another person with out profile_image_url and profile_image
-        person = factories.PersonFactory(profile_image_url=None, profile_image=None)
-        self.assertFalse(person.get_profile_image_url)
+        self.assertIsNone(person.get_profile_image_url)
 
     def test_str(self):
         """ Verify casting an instance to a string returns the person's full name. """
@@ -545,6 +598,23 @@ class AbstractValueModelTests(TestCase):
         self.assertEqual(str(instance), value)
 
 
+class AbstractTitleDescriptionModelTests(TestCase):
+    """ Tests for AbstractTitleDescriptionModel. """
+
+    def test_str(self):
+        class TestAbstractTitleDescriptionModel(AbstractTitleDescriptionModel):
+            pass
+
+        title = 'test title'
+        description = 'Description'
+
+        instance = TestAbstractTitleDescriptionModel(title=None, description=description)
+        self.assertEqual(str(instance), description)
+
+        instance = TestAbstractTitleDescriptionModel(title=title, description=description)
+        self.assertEqual(str(instance), title)
+
+
 @ddt.ddt
 class ProgramTests(TestCase):
     """Tests of the Program model."""
@@ -552,9 +622,9 @@ class ProgramTests(TestCase):
     def setUp(self):
         super(ProgramTests, self).setUp()
         transcript_languages = LanguageTag.objects.all()[:2]
-        subjects = factories.SubjectFactory.create_batch(2)
+        self.subjects = factories.SubjectFactory.create_batch(3)
         self.course_runs = factories.CourseRunFactory.create_batch(
-            3, transcript_languages=transcript_languages, course__subjects=subjects,
+            3, transcript_languages=transcript_languages, course__subjects=self.subjects,
             weeks_to_complete=2)
         self.courses = [course_run.course for course_run in self.course_runs]
         self.excluded_course_run = factories.CourseRunFactory(course=self.courses[0])
@@ -925,13 +995,21 @@ class ProgramTests(TestCase):
         self.assertGreater(len(actual_transcript_languages), 0)
         self.assertEqual(actual_transcript_languages, expected_transcript_languages)
 
-    def test_subjects(self):
-        expected_subjects = itertools.chain.from_iterable([list(course.subjects.all()) for course in self.courses])
-        expected_subjects = set(expected_subjects)
-        actual_subjects = self.program.subjects
+    def test_subject_order(self):
+        """
+        Verify the program's subjects are in order of frequency among courses, with primary subjects coming first
+        """
+        course1 = factories.CourseFactory(subjects=self.subjects[:1])  # A
+        course2 = factories.CourseFactory(subjects=self.subjects[:2])  # A, B
+        course3 = factories.CourseFactory(subjects=self.subjects[::-1])  # C, B, A
 
-        self.assertGreater(len(actual_subjects), 0)
-        self.assertEqual(actual_subjects, expected_subjects)
+        program1 = factories.ProgramFactory(courses=[course1, course2, course3])
+        self.assertEqual(program1.subjects, self.subjects)
+
+        course4 = factories.CourseFactory(subjects=self.subjects[::-2])  # C, A; these make C the most common primary
+        course5 = factories.CourseFactory(subjects=self.subjects[::-2])  # C, A; and A the most common overall in p2
+        program2 = factories.ProgramFactory(courses=[course1, course2, course3, course4, course5])
+        self.assertEqual(program2.subjects, [self.subjects[2], self.subjects[0], self.subjects[1]])
 
     def test_start(self):
         """ Verify the property returns the minimum start date for the course runs associated with the
@@ -1124,12 +1202,12 @@ class ProgramTests(TestCase):
             assert mock_delete_obj.called
 
 
-class CreditPathwayTests(TestCase):
-    """ Tests of the CreditPathway model."""
+class PathwayTests(TestCase):
+    """ Tests of the Pathway model."""
 
     def test_str(self):
-        credit_pathway = factories.CreditPathwayFactory()
-        self.assertEqual(str(credit_pathway), credit_pathway.name)
+        pathway = factories.PathwayFactory()
+        self.assertEqual(str(pathway), pathway.name)
 
 
 class PersonSocialNetworkTests(TestCase):
@@ -1143,39 +1221,27 @@ class PersonSocialNetworkTests(TestCase):
     def test_str(self):
         """Verify that a person-social-network is properly converted to a str."""
         self.assertEqual(
-            str(self.network), '{type}: {value}'.format(type=self.network.type, value=self.network.value)
+            str(self.network), '{title}: {url}'.format(title=self.network.display_title, url=self.network.url)
         )
 
     def test_unique_constraint(self):
         """Verify that a person-social-network does not allow multiple accounts for same
         social network.
         """
-        factories.PersonSocialNetworkFactory(person=self.person, type='facebook')
+        factories.PersonSocialNetworkFactory(person=self.person, type='facebook', title='@Mikix')
         with self.assertRaises(IntegrityError):
-            factories.PersonSocialNetworkFactory(person=self.person, type='facebook')
+            factories.PersonSocialNetworkFactory(person=self.person, type='facebook', title='@Mikix')
 
 
-class CourseSocialNetworkTests(TestCase):
-    """Tests of the CourseSocialNetwork model."""
+class PersonAreaOfExpertiseTests(TestCase):
+    """Tests for the PersonAreaOfExpertise model."""
 
     def setUp(self):
-        super(CourseSocialNetworkTests, self).setUp()
-        self.network = factories.CourseRunSocialNetworkFactory()
-        self.course_run = factories.CourseRunFactory()
+        super(PersonAreaOfExpertiseTests, self).setUp()
+        self.area_of_expertise = factories.PersonAreaOfExpertiseFactory()
 
     def test_str(self):
-        """Verify that a course-social-network is properly converted to a str."""
-        self.assertEqual(
-            str(self.network), '{type}: {value}'.format(type=self.network.type, value=self.network.value)
-        )
-
-    def test_unique_constraint(self):
-        """Verify that a course-social-network does not allow multiple accounts for same
-        social network.
-        """
-        factories.CourseRunSocialNetworkFactory(course_run=self.course_run, type='facebook')
-        with self.assertRaises(IntegrityError):
-            factories.CourseRunSocialNetworkFactory(course_run=self.course_run, type='facebook')
+        self.assertEqual(str(self.area_of_expertise), self.area_of_expertise.value)
 
 
 class SeatTypeTests(TestCase):
@@ -1260,6 +1326,55 @@ class RankingTests(TestCase):
         self.assertEqual(str(ranking), description)
 
 
+class CurriculumTests(TestCase):
+    """ Tests of the Curriculum model. """
+    def setUp(self):
+        self.course_run = factories.CourseRunFactory()
+        self.courses = [self.course_run.course]
+        self.degree = factories.DegreeFactory(courses=self.courses)
+
+    def test_str(self):
+        uuid_string = uuid.uuid4()
+        curriculum = Curriculum.objects.create(degree=self.degree, uuid=uuid_string)
+        self.assertEqual(str(curriculum), str(uuid_string))
+
+
+class DegreeDeadlineTests(TestCase):
+    """ Tests the DegreeDeadline model."""
+    def setUp(self):
+        self.course_run = factories.CourseRunFactory()
+        self.courses = [self.course_run.course]
+        self.degree = factories.DegreeFactory(courses=self.courses)
+
+    def test_str(self):
+        deadline_name = "A test deadline"
+        deadline_date = "January 1, 2019"
+        degree_deadline = DegreeDeadline.objects.create(
+            degree=self.degree,
+            name=deadline_name,
+            date=deadline_date,
+        )
+        self.assertEqual(str(degree_deadline), "{} {}".format(deadline_name, deadline_date))
+
+
+class DegreeCostTests(TestCase):
+    """ Tests the DegreeCost model."""
+    def setUp(self):
+        self.course_run = factories.CourseRunFactory()
+        self.courses = [self.course_run.course]
+        self.degree = factories.DegreeFactory(courses=self.courses)
+
+    def test_str(self):
+        cost_name = "A test deadline"
+        cost_amount = "January 1, 2019"
+        degree_cost = DegreeCost.objects.create(
+            degree=self.degree,
+            description=cost_name,
+            amount=cost_amount,
+        )
+        self.assertEqual(str(degree_cost), str('{}, {}').format(cost_name, cost_amount))
+
+
 class SubjectTests(SiteMixin, TestCase):
     """ Tests of the Multilingual Subject (and SubjectTranslation) model. """
 
@@ -1314,7 +1429,7 @@ class TopicTests(SiteMixin, TestCase):
 
 
 class DegreeTests(TestCase):
-    """ Tests of the Degree, Curriculum and related models. """
+    """ Tests of the Degree, Curriculum, and related models. """
 
     def setUp(self):
         super(DegreeTests, self).setUp()
@@ -1324,7 +1439,13 @@ class DegreeTests(TestCase):
         self.curriculum = factories.CurriculumFactory(degree=self.degree)
 
     def test_basic_degree(self):
-        assert self.degree.application_deadline is not None
         assert self.degree.curriculum is not None
         assert self.curriculum.program_curriculum is not None
         assert self.curriculum.course_curriculum is not None
+        assert self.curriculum.marketing_text is not None
+        assert self.degree.lead_capture_list_name is not None
+        assert self.degree.lead_capture_image is not None
+        assert self.degree.campus_image is not None
+        assert self.degree.banner_border_color is not None
+        assert self.degree.title_background_image is not None
+        assert self.degree.micromasters_background_image is not None

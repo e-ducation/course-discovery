@@ -19,7 +19,8 @@ from course_discovery.apps.core.tests.factories import USER_PASSWORD, PartnerFac
 from course_discovery.apps.core.tests.helpers import make_image_file
 from course_discovery.apps.course_metadata.admin import PositionAdmin, ProgramEligibilityFilter
 from course_discovery.apps.course_metadata.choices import ProgramStatus
-from course_discovery.apps.course_metadata.forms import CreditPathwayAdminForm, ProgramAdminForm
+from course_discovery.apps.course_metadata.constants import PathwayType
+from course_discovery.apps.course_metadata.forms import PathwayAdminForm, ProgramAdminForm
 from course_discovery.apps.course_metadata.models import Person, Position, Program, ProgramType, Seat, SeatType
 from course_discovery.apps.course_metadata.tests import factories
 
@@ -157,7 +158,7 @@ class AdminTests(SiteMixin, TestCase):
                 (False, False),
                 (True, True)
             ),
-            ProgramStatus.labels
+            sorted(ProgramStatus.labels)  # We need a consistent ordering to distribute tests with pytest-xdist
         )
     )
     @ddt.unpack
@@ -429,7 +430,7 @@ class PersonPositionAdminTest(TestCase):
         self.assertNotIn('delete_selected', self.person_position_admin.get_actions(self.request))
 
 
-class CreditPathwayAdminTest(TestCase):
+class PathwayAdminTest(TestCase):
     """Tests for credit pathway admin."""
 
     def test_program_with_same_partner(self):
@@ -443,9 +444,10 @@ class CreditPathwayAdminTest(TestCase):
             'name': 'Name',
             'org_name': 'Org',
             'email': 'email@example.com',
-            'programs': [program1.id]
+            'programs': [program1.id],
+            'pathway_type': PathwayType.CREDIT.value,
         }
-        form = CreditPathwayAdminForm(data=data)
+        form = PathwayAdminForm(data=data)
 
         self.assertDictEqual(form.errors, {})
 
@@ -462,9 +464,10 @@ class CreditPathwayAdminTest(TestCase):
             'name': 'Name',
             'org_name': 'Org',
             'email': 'email@example.com',
-            'programs': [program1.id, program2.id]
+            'programs': [program1.id, program2.id],
+            'pathway_type': PathwayType.INDUSTRY.value,
         }
-        form = CreditPathwayAdminForm(data=data)
+        form = PathwayAdminForm(data=data)
 
         self.assertDictEqual(form.errors, {
             '__all__': ['These programs are for a different partner than the pathway itself: partner2 program']

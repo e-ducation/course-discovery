@@ -189,15 +189,15 @@ class CourseRunWrapper(BaseWrapper):
 
     @property
     def is_self_paced(self):
-        if self.wrapped_obj.pacing_type == CourseRunPacing.Self:
+        if self.wrapped_obj.pacing_type_temporary == CourseRunPacing.Self:
             return True
 
         return False
 
     @property
     def mdc_submission_due_date(self):
-        if self.wrapped_obj.start:
-            return self.wrapped_obj.start - timedelta(days=10)
+        if self.wrapped_obj.start_date_temporary:
+            return self.wrapped_obj.start_date_temporary - timedelta(days=10)
 
         return None
 
@@ -223,12 +223,23 @@ class CourseRunWrapper(BaseWrapper):
                 'image_url': staff.get_profile_image_url,
                 'profile_url': staff.profile_url,
                 'bio': staff.bio,
-                'email': staff.email,
-                'social_networks': {
-                    staff.type: staff.value
-                    for staff in staff.person_networks.all()
-                },
-                'is_new': False if staff.profile_image_url else True
+                'social_networks': [
+                    {
+                        'id': network.id,
+                        'type': network.type,
+                        'title': network.title,
+                        'url': network.url,
+                    }
+                    for network in staff.person_networks.all()
+                ],
+                'major_works': staff.major_works,
+                'areas_of_expertise': [
+                    {
+                        'id': area_of_expertise.id,
+                        'value': area_of_expertise.value,
+                    }
+                    for area_of_expertise in staff.areas_of_expertise.all()
+                ],
             }
 
             if hasattr(staff, 'position'):

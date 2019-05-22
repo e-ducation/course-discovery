@@ -13,8 +13,8 @@ from course_discovery.apps.course_metadata.data_loaders.api import (
     CoursesApiDataLoader, EcommerceApiDataLoader, OrganizationsApiDataLoader, ProgramsApiDataLoader
 )
 from course_discovery.apps.course_metadata.data_loaders.marketing_site import (
-    CourseMarketingSiteDataLoader, PersonMarketingSiteDataLoader, SchoolMarketingSiteDataLoader,
-    SponsorMarketingSiteDataLoader, SubjectMarketingSiteDataLoader
+    CourseMarketingSiteDataLoader, SchoolMarketingSiteDataLoader, SponsorMarketingSiteDataLoader,
+    SubjectMarketingSiteDataLoader
 )
 from course_discovery.apps.course_metadata.data_loaders.tests import mock_data
 from course_discovery.apps.course_metadata.management.commands.refresh_course_metadata import execute_parallel_loader
@@ -35,7 +35,6 @@ class RefreshCourseMetadataCommandTests(TransactionTestCase):
             (SubjectMarketingSiteDataLoader, partner.marketing_site_url_root, None),
             (SchoolMarketingSiteDataLoader, partner.marketing_site_url_root, None),
             (SponsorMarketingSiteDataLoader, partner.marketing_site_url_root, None),
-            (PersonMarketingSiteDataLoader, partner.marketing_site_url_root, None),
             (CourseMarketingSiteDataLoader, partner.marketing_site_url_root, None),
             (OrganizationsApiDataLoader, partner.organizations_api_url, None),
             (CoursesApiDataLoader, partner.courses_api_url, None),
@@ -43,6 +42,11 @@ class RefreshCourseMetadataCommandTests(TransactionTestCase):
             (ProgramsApiDataLoader, partner.programs_api_url, None),
         ]
         self.kwargs = {'username': 'bob'}
+
+        # Courses must exist for the refresh_course_metadata command to use multiple threads. If there are no
+        # courses, the command won't risk race conditions between threads trying to create the same course.
+        CourseFactory(partner=self.partner)
+
         self.mock_access_token_api()
 
     def mock_apis(self):
@@ -157,10 +161,6 @@ class RefreshCourseMetadataCommandTests(TransactionTestCase):
             self.mock_access_token_api(rsps)
             self.mock_apis()
 
-            # Courses must exist for the command to use multiple threads. If there are no
-            # courses, the command won't risk race conditions between threads trying to
-            # create the same course.
-            CourseFactory(partner=self.partner)
             with mock.patch('concurrent.futures.ProcessPoolExecutor.submit') as mock_executor:
                 call_command('refresh_course_metadata')
 
@@ -205,7 +205,6 @@ class RefreshCourseMetadataCommandTests(TransactionTestCase):
                     SubjectMarketingSiteDataLoader,
                     SchoolMarketingSiteDataLoader,
                     SponsorMarketingSiteDataLoader,
-                    PersonMarketingSiteDataLoader,
                     CourseMarketingSiteDataLoader,
                     OrganizationsApiDataLoader,
                     CoursesApiDataLoader,

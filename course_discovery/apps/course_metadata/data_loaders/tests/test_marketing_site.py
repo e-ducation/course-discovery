@@ -16,12 +16,12 @@ from testfixtures import LogCapture
 from course_discovery.apps.course_metadata.choices import CourseRunPacing, CourseRunStatus
 from course_discovery.apps.course_metadata.data_loaders.marketing_site import logger as marketing_site_logger
 from course_discovery.apps.course_metadata.data_loaders.marketing_site import (
-    CourseMarketingSiteDataLoader, PersonMarketingSiteDataLoader, SchoolMarketingSiteDataLoader,
-    SponsorMarketingSiteDataLoader, SubjectMarketingSiteDataLoader
+    CourseMarketingSiteDataLoader, SchoolMarketingSiteDataLoader, SponsorMarketingSiteDataLoader,
+    SubjectMarketingSiteDataLoader
 )
 from course_discovery.apps.course_metadata.data_loaders.tests import JSON, mock_data
 from course_discovery.apps.course_metadata.data_loaders.tests.mixins import DataLoaderTestMixin
-from course_discovery.apps.course_metadata.models import Course, Organization, Person, Subject
+from course_discovery.apps.course_metadata.models import Course, Organization, Subject
 from course_discovery.apps.course_metadata.tests import factories
 from course_discovery.apps.ietf_language_tags.models import LanguageTag
 
@@ -270,48 +270,6 @@ class SponsorMarketingSiteDataLoaderTests(AbstractMarketingSiteDataLoaderTestMix
             self.assert_sponsor_loaded(sponsor)
 
 
-class PersonMarketingSiteDataLoaderTests(AbstractMarketingSiteDataLoaderTestMixin, TestCase):
-    loader_class = PersonMarketingSiteDataLoader
-    mocked_data = mock_data.MARKETING_SITE_API_PERSON_BODIES
-
-    def assert_person_loaded(self, data):
-        uuid = data['uuid']
-        person = Person.objects.get(uuid=uuid, partner=self.partner)
-        expected_values = {
-            'given_name': data['field_person_first_middle_name'],
-            'family_name': data['field_person_last_name'],
-            'bio': self.loader.clean_html(data['field_person_resume']['value']),
-            'profile_image_url': data['field_person_image']['url'],
-            'slug': data['url'].split('/')[-1],
-            'profile_url': data['url']
-        }
-
-        for field, value in expected_values.items():
-            self.assertEqual(getattr(person, field), value)
-
-        positions = data['field_person_positions']
-
-        if positions:
-            position_data = positions[0]
-            titles = position_data['field_person_position_tiltes']
-
-            if titles:
-                self.assertEqual(person.position.title, titles[0])
-                self.assertEqual(person.position.organization_name,
-                                 (position_data.get('field_person_position_org_link') or {}).get('title'))
-
-    @responses.activate
-    def test_ingest(self):
-        self.mock_login_response()
-        people = self.mock_api()
-        factories.OrganizationFactory(name='MIT')
-
-        self.loader.ingest()
-
-        for person in people:
-            self.assert_person_loaded(person)
-
-
 @ddt.ddt
 class CourseMarketingSiteDataLoaderTests(AbstractMarketingSiteDataLoaderTestMixin, TestCase):
     loader_class = CourseMarketingSiteDataLoader
@@ -350,6 +308,29 @@ class CourseMarketingSiteDataLoaderTests(AbstractMarketingSiteDataLoaderTestMixi
 
         name = 'Advanced'
         self.assertEqual(self.loader.get_level_type(name).name, name)
+
+    def test_get_extra_description(self):
+        self.assertIsNone(self.loader.get_extra_description({}))
+
+        extra_description_raw = {
+            'field_course_extra_desc_title': 'null',
+            'field_course_extra_description': {}
+        }
+
+        extra_description = self.loader.get_extra_description(extra_description_raw)
+        self.assertIsNone(extra_description)
+
+        title = 'additional'
+        description = 'promo'
+        extra_description_raw = {
+            'field_course_extra_desc_title': title,
+            'field_course_extra_description': {
+                'value': description
+            }
+        }
+        extra_description = self.loader.get_extra_description(extra_description_raw)
+        self.assertEqual(extra_description.title, title)
+        self.assertEqual(extra_description.description, description)
 
     @ddt.unpack
     @ddt.data(

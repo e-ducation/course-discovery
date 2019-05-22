@@ -1,7 +1,7 @@
 import datetime
 import itertools
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from urllib.parse import urljoin
 from uuid import uuid4
 
@@ -9,9 +9,9 @@ import pytz
 import waffle
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models.functions import Lower
 from django.db.models.query_utils import Q
 from django.utils.functional import cached_property
-from django.utils.text import slugify
 from django.utils.translation import ugettext_lazy as _
 from django_extensions.db.fields import AutoSlugField
 from django_extensions.db.models import TimeStampedModel
@@ -25,11 +25,14 @@ from taggit_autosuggest.managers import TaggableManager
 
 from course_discovery.apps.core.models import Currency, Partner
 from course_discovery.apps.course_metadata.choices import CourseRunPacing, CourseRunStatus, ProgramStatus, ReportingType
+from course_discovery.apps.course_metadata.constants import PathwayType
 from course_discovery.apps.course_metadata.publishers import (
     CourseRunMarketingSitePublisher, ProgramMarketingSitePublisher
 )
 from course_discovery.apps.course_metadata.query import CourseQuerySet, CourseRunQuerySet, ProgramQuerySet
-from course_discovery.apps.course_metadata.utils import UploadToFieldNamePath, clean_query, custom_render_variations
+from course_discovery.apps.course_metadata.utils import (
+    UploadToFieldNamePath, clean_query, custom_render_variations, uslugify
+)
 from course_discovery.apps.ietf_language_tags.models import LanguageTag
 from course_discovery.apps.publisher.utils import VALID_CHARS_IN_COURSE_NUM_AND_ORG_KEY
 
@@ -70,25 +73,15 @@ class AbstractMediaModel(TimeStampedModel):
         abstract = True
 
 
-class AbstractSocialNetworkModel(TimeStampedModel):
-    """ SocialNetwork model. """
-    FACEBOOK = 'facebook'
-    TWITTER = 'twitter'
-    BLOG = 'blog'
-    OTHERS = 'others'
-
-    SOCIAL_NETWORK_CHOICES = (
-        (FACEBOOK, _('Facebook')),
-        (TWITTER, _('Twitter')),
-        (BLOG, _('Blog')),
-        (OTHERS, _('Others')),
-    )
-
-    type = models.CharField(max_length=15, choices=SOCIAL_NETWORK_CHOICES, db_index=True)
-    value = models.CharField(max_length=500)
+class AbstractTitleDescriptionModel(TimeStampedModel):
+    """ Abstract base class for models with a title and description pair. """
+    title = models.CharField(max_length=255, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
 
     def __str__(self):
-        return '{type}: {value}'.format(type=self.type, value=self.value)
+        if self.title:
+            return self.title
+        return self.description
 
     class Meta(object):
         abstract = True
@@ -118,7 +111,7 @@ class Subject(TranslatableModel, TimeStampedModel):
     uuid = models.UUIDField(blank=False, null=False, default=uuid4, editable=False, verbose_name=_('UUID'))
     banner_image_url = models.URLField(blank=True, null=True)
     card_image_url = models.URLField(blank=True, null=True)
-    slug = AutoSlugField(populate_from='name', editable=True, blank=True,
+    slug = AutoSlugField(populate_from='name', editable=True, blank=True, slugify_function=uslugify,
                          help_text=_('Leave this field blank to have the value generated automatically.'))
 
     partner = models.ForeignKey(Partner)
@@ -156,7 +149,7 @@ class Topic(TranslatableModel, TimeStampedModel):
     """ Topic model. """
     uuid = models.UUIDField(blank=False, null=False, default=uuid4, editable=False, verbose_name=_('UUID'))
     banner_image_url = models.URLField(blank=True, null=True)
-    slug = AutoSlugField(populate_from='name', editable=True, blank=True,
+    slug = AutoSlugField(populate_from='name', editable=True, blank=True, slugify_function=uslugify,
                          help_text=_('Leave this field blank to have the value generated automatically.'))
 
     partner = models.ForeignKey(Partner)
@@ -209,6 +202,11 @@ class JobOutlookItem(AbstractValueModel):
 class SyllabusItem(AbstractValueModel):
     """ SyllabusItem model. """
     parent = models.ForeignKey('self', blank=True, null=True, related_name='children')
+
+
+class AdditionalPromoArea(AbstractTitleDescriptionModel):
+    """ Additional Promo Area Model """
+    pass
 
 
 class Organization(TimeStampedModel):
@@ -265,6 +263,7 @@ class Person(TimeStampedModel):
     given_name = models.CharField(max_length=255)
     family_name = models.CharField(max_length=255, null=True, blank=True)
     bio = models.TextField(null=True, blank=True)
+    bio_language = models.ForeignKey(LanguageTag, null=True, blank=True)
     profile_image_url = models.URLField(null=True, blank=True)
     profile_image = StdImageField(
         upload_to=UploadToFieldNamePath(populate_from='uuid', path='media/people/profile_images'),
@@ -274,9 +273,12 @@ class Person(TimeStampedModel):
             'medium': (110, 110),
         },
     )
-    slug = AutoSlugField(populate_from=('given_name', 'family_name'), editable=True)
-    profile_url = models.URLField(null=True, blank=True)
+    slug = AutoSlugField(populate_from=('given_name', 'family_name'), editable=True, slugify_function=uslugify)
     email = models.EmailField(null=True, blank=True, max_length=255)
+    major_works = models.TextField(
+        blank=True,
+        help_text=_('A list of major works by this person. Must be valid HTML.'),
+    )
 
     class Meta:
         unique_together = (
@@ -304,11 +306,14 @@ class Person(TimeStampedModel):
             return self.given_name
 
     @property
+    def profile_url(self):
+        return self.partner.marketing_site_url_root + 'bio/' + self.slug
+
+    @property
     def get_profile_image_url(self):
         if self.profile_image and hasattr(self.profile_image, 'url'):
             return self.profile_image.url
-        else:
-            return self.profile_image_url
+        return None
 
 
 class Position(TimeStampedModel):
@@ -341,10 +346,13 @@ class Course(TimeStampedModel):
     canonical_course_run = models.OneToOneField(
         'course_metadata.CourseRun', related_name='canonical_for_course', default=None, null=True, blank=True
     )
-    key = models.CharField(max_length=255)
+    key = models.CharField(max_length=255, db_index=True)
     title = models.CharField(max_length=255, default=None, null=True, blank=True)
-    short_description = models.CharField(max_length=350, default=None, null=True, blank=True)
+    short_description = models.TextField(default=None, null=True, blank=True)
     full_description = models.TextField(default=None, null=True, blank=True)
+    extra_description = models.ForeignKey(
+        AdditionalPromoArea, default=None, null=True, blank=True, related_name='extra_description'
+    )
     authoring_organizations = SortedManyToManyField(Organization, blank=True, related_name='authored_courses')
     sponsoring_organizations = SortedManyToManyField(Organization, blank=True, related_name='sponsored_courses')
     subjects = SortedManyToManyField(Subject, blank=True)
@@ -365,14 +373,21 @@ class Course(TimeStampedModel):
         },
         help_text=_('Add the course image')
     )
-    slug = AutoSlugField(populate_from='key', editable=True)
+    slug = AutoSlugField(populate_from='key', editable=True, slugify_function=uslugify)
     video = models.ForeignKey(Video, default=None, null=True, blank=True)
+    faq = models.TextField(default=None, null=True, blank=True, verbose_name=_('FAQ'))
+    learner_testimonials = models.TextField(default=None, null=True, blank=True)
+    has_ofac_restrictions = models.BooleanField(default=False, verbose_name=_('Course Has OFAC Restrictions'))
 
     # TODO Remove this field.
     number = models.CharField(
         max_length=50, null=True, blank=True, help_text=_(
             'Course number format e.g CS002x, BIO1.1x, BIO1.2x'
         )
+    )
+
+    additional_information = models.TextField(
+        default=None, null=True, blank=True, verbose_name=_('Additional Information')
     )
 
     objects = CourseQuerySet.as_manager()
@@ -428,6 +443,14 @@ class Course(TimeStampedModel):
             )
         )
 
+    @property
+    def first_enrollable_paid_seat_price(self):
+        for course_run in self.active_course_runs.order_by(Lower('key')):
+            if course_run.has_enrollable_paid_seats():
+                return course_run.first_enrollable_paid_seat_price
+
+        return None
+
     @classmethod
     def search(cls, query):
         """ Queries the search index.
@@ -439,6 +462,13 @@ class Course(TimeStampedModel):
             QuerySet
         """
         query = clean_query(query)
+
+        if query == '(*)':
+            # Early-exit optimization. Wildcard searching is very expensive in elasticsearch. And since we just
+            # want everything, we don't need to actually query elasticsearch at all.
+            # No point logging if log_course_search_queries is enabled for this wildcard, so skip that too.
+            return cls.objects.all()
+
         results = SearchQuerySet().models(cls).raw_search(query)
         ids = {result.pk for result in results}
 
@@ -467,8 +497,8 @@ class CourseRun(TimeStampedModel):
     enrollment_start = models.DateTimeField(null=True, blank=True)
     enrollment_end = models.DateTimeField(null=True, blank=True, db_index=True)
     announcement = models.DateTimeField(null=True, blank=True)
-    short_description_override = models.CharField(
-        max_length=350, default=None, null=True, blank=True,
+    short_description_override = models.TextField(
+        default=None, null=True, blank=True,
         help_text=_(
             "Short description specific for this run of a course. Leave this value blank to default to "
             "the parent course's short_description attribute."))
@@ -498,7 +528,6 @@ class CourseRun(TimeStampedModel):
     video = models.ForeignKey(Video, default=None, null=True, blank=True)
     video_translation_languages = models.ManyToManyField(
         LanguageTag, blank=True, related_name='+')
-    learner_testimonials = models.TextField(blank=True, null=True)
     slug = models.CharField(max_length=255, blank=True, null=True, db_index=True)
     hidden = models.BooleanField(default=False)
     mobile_available = models.BooleanField(default=False)
@@ -520,6 +549,11 @@ class CourseRun(TimeStampedModel):
         help_text=_('Pick a tag from the suggestions. To make a new tag, add a comma after the tag name.'),
     )
 
+    has_ofac_restrictions = models.BooleanField(
+        default=False,
+        verbose_name=_('Add OFAC restriction text to the FAQ section of the Marketing site')
+    )
+
     objects = CourseRunQuerySet.as_manager()
 
     def _enrollable_paid_seats(self):
@@ -528,6 +562,16 @@ class CourseRun(TimeStampedModel):
         prerequisites) associated with this CourseRun.
         """
         return self.seats.exclude(type__in=Seat.SEATS_WITH_PREREQUISITES).filter(price__gt=0.0)
+
+    @property
+    def first_enrollable_paid_seat_price(self):
+        seats = list(self._enrollable_paid_seats().order_by('upgrade_deadline'))
+        if not seats:
+            # Enrollable paid seats are not available for this CourseRun.
+            return None
+
+        price = int(seats[0].price) if seats[0].price else None
+        return price
 
     def first_enrollable_paid_seat_sku(self):
         seats = list(self._enrollable_paid_seats().order_by('upgrade_deadline'))
@@ -764,7 +808,14 @@ class CourseRun(TimeStampedModel):
             SearchQuerySet
         """
         query = clean_query(query)
-        return SearchQuerySet().models(cls).raw_search(query).load_all()
+        queryset = SearchQuerySet().models(cls)
+
+        if query == '(*)':
+            # Early-exit optimization. Wildcard searching is very expensive in elasticsearch. And since we just
+            # want everything, we don't need to actually query elasticsearch at all.
+            return queryset.load_all()
+
+        return queryset.raw_search(query).load_all()
 
     def __str__(self):
         return '{key}: {title}'.format(key=self.key, title=self.title)
@@ -786,7 +837,7 @@ class CourseRun(TimeStampedModel):
             if not self.slug:
                 # If we are publishing this object to marketing site,
                 # let's make sure slug is defined
-                self.slug = slugify(self.title)
+                self.slug = uslugify(self.title)
 
             with transaction.atomic():
                 super(CourseRun, self).save(*args, **kwargs)
@@ -803,7 +854,7 @@ class CourseRun(TimeStampedModel):
 
 class SeatType(TimeStampedModel):
     name = models.CharField(max_length=64, unique=True)
-    slug = AutoSlugField(populate_from='name')
+    slug = AutoSlugField(populate_from='name', slugify_function=uslugify)
 
     def __str__(self):
         return self.name
@@ -928,7 +979,7 @@ class ProgramType(TimeStampedModel):
         },
         help_text=_('Please provide an image file with transparent background'),
     )
-    slug = AutoSlugField(populate_from='name', editable=True, unique=True,
+    slug = AutoSlugField(populate_from='name', editable=True, unique=True, slugify_function=uslugify,
                          help_text=_('Leave this field blank to have the value generated automatically.'))
 
     def __str__(self):
@@ -1103,9 +1154,19 @@ class Program(TimeStampedModel):
 
     @property
     def subjects(self):
-        subjects = [course.subjects.all() for course in self.courses.all()]
-        subjects = itertools.chain.from_iterable(subjects)
-        return set(subjects)
+        """
+        :return: The list of subjects; the first subject should be the most common primary subjects of its courses,
+        other subjects should be collected and ranked by frequency among the courses.
+        """
+        primary_subjects = []
+        course_subjects = []
+        for course in self.courses.all():
+            subjects = course.subjects.all()
+            primary_subjects.extend(subjects[:1])  # "Primary" subject is the first one
+            course_subjects.extend(subjects)
+        common_primary = [s for s, _ in Counter(primary_subjects).most_common()][:1]
+        common_others = [s for s, _ in Counter(course_subjects).most_common() if s not in common_primary]
+        return common_primary + common_others
 
     @property
     def seats(self):
@@ -1296,10 +1357,6 @@ class Degree(Program):
     This model captures information about a Degree (e.g. a Master's Degree).
     It mostly stores information relevant to the marketing site's product page for this degree.
     """
-    application_deadline = models.CharField(
-        help_text=_('String-based deadline field (e.g. FALL 2020)'),
-        max_length=255,
-    )
     apply_url = models.CharField(
         help_text=_('Callback URL to partner application flow'), max_length=255, blank=True
     )
@@ -1308,26 +1365,102 @@ class Degree(Program):
         max_length=255,
         blank=True
     )
-    campus_image_mobile = models.ImageField(
-        upload_to='media/degree_marketing/campus_images/',
-        blank=True,
-        null=True,
-        help_text=_('Provide a campus image to display on mobile displays'),
+    banner_border_color = models.CharField(
+        help_text=_("""The 6 character hex value of the color to make the banner borders
+            (e.g. "#ff0000" which equals red) No need to provide the `#`"""),
+        max_length=6,
+        blank=True
     )
-    campus_image_tablet = models.ImageField(
+    campus_image = models.ImageField(
         upload_to='media/degree_marketing/campus_images/',
         blank=True,
         null=True,
-        help_text=_('Provide a campus image to display on tablet displays'),
+        help_text=_('Provide a campus image for the header of the degree'),
     )
-    campus_image_desktop = models.ImageField(
+    title_background_image = models.ImageField(
         upload_to='media/degree_marketing/campus_images/',
         blank=True,
         null=True,
-        help_text=_('Provide a campus image to display on desktop displays'),
+        help_text=_('Provide a background image for the title section of the degree'),
+    )
+    prerequisite_coursework = models.TextField(default='TBD')
+    application_requirements = models.TextField(default='TBD')
+    costs_fine_print = models.TextField(
+        help_text=_('The fine print that displays at the Tuition section\'s bottom'),
+        null=True,
+        blank=True,
+    )
+    deadlines_fine_print = models.TextField(
+        help_text=_('The fine print that displays at the Deadline section\'s bottom'),
+        null=True,
+        blank=True,
+    )
+    rankings = SortedManyToManyField(Ranking, blank=True)
+
+    lead_capture_list_name = models.CharField(
+        help_text=_('The sailthru email list name to capture leads'),
+        max_length=255,
+        default='Master_default',
+    )
+    lead_capture_image = StdImageField(
+        upload_to=UploadToFieldNamePath(populate_from='uuid', path='media/degree_marketing/lead_capture_images/'),
+        blank=True,
+        null=True,
+        variations={
+            'large': (1440, 480),
+            'medium': (726, 242),
+            'small': (435, 145),
+            'x-small': (348, 116),
+        },
+        help_text=_('Please provide an image file for the lead capture banner.'),
     )
 
-    rankings = SortedManyToManyField(Ranking, blank=True)
+    micromasters_url = models.URLField(
+        help_text=_('URL to micromasters landing page'),
+        max_length=255,
+        blank=True,
+        null=True
+    )
+    micromasters_long_title = models.CharField(
+        help_text=_('Micromasters verbose title'),
+        max_length=255,
+        blank=True,
+        null=True
+    )
+    micromasters_long_description = models.TextField(
+        help_text=_('Micromasters descriptive paragraph'),
+        blank=True,
+        null=True
+    )
+    micromasters_background_image = StdImageField(
+        upload_to=UploadToFieldNamePath(populate_from='uuid', path='media/degree_marketing/mm_images/'),
+        blank=True,
+        null=True,
+        variations={
+            'large': (1440, 480),
+            'medium': (726, 242),
+            'small': (435, 145),
+        },
+        help_text=_('Customized background image for the MicroMasters section.'),
+    )
+    search_card_ranking = models.CharField(
+        help_text=_('Ranking display for search card (e.g. "#1 in the U.S."'),
+        max_length=50,
+        blank=True,
+        null=True
+    )
+    search_card_cost = models.CharField(
+        help_text=_('Cost display for search card (e.g. "$9,999"'),
+        max_length=50,
+        blank=True,
+        null=True
+    )
+    search_card_courses = models.CharField(
+        help_text=_('Number of courses for search card (e.g. "11 Courses"'),
+        max_length=50,
+        blank=True,
+        null=True
+    )
 
     class Meta(object):
         verbose_name_plural = "Degrees"
@@ -1336,14 +1469,125 @@ class Degree(Program):
         return str('Degree: {}'.format(self.title))
 
 
+class IconTextPairing(TimeStampedModel):
+    """
+    Represents an icon:text model
+    """
+    BELL = 'fa-bell'
+    CERTIFICATE = 'fa-certificate'
+    CHECK = 'fa-check-circle'
+    CLOCK = 'fa-clock-o'
+    DESKTOP = 'fa-desktop'
+    INFO = 'fa-info-circle'
+    SITEMAP = 'fa-sitemap'
+    USER = 'fa-user'
+    DOLLAR = 'fa-dollar'
+    BOOK = 'fa-book'
+    MORTARBOARD = 'fa-mortar-board'
+    STAR = 'fa-star'
+    TROPHY = 'fa-trophy'
+
+    ICON_CHOICES = (
+        (BELL, _('Bell')),
+        (CERTIFICATE, _('Certificate')),
+        (CHECK, _('Checkmark')),
+        (CLOCK, _('Clock')),
+        (DESKTOP, _('Desktop')),
+        (INFO, _('Info')),
+        (SITEMAP, _('Sitemap')),
+        (USER, _('User')),
+        (DOLLAR, _('Dollar')),
+        (BOOK, _('Book')),
+        (MORTARBOARD, _('Mortar Board')),
+        (STAR, _('Star')),
+        (TROPHY, _('Trophy')),
+    )
+
+    degree = models.ForeignKey(Degree, related_name='quick_facts', on_delete=models.CASCADE)
+    icon = models.CharField(max_length=100, verbose_name=_('Icon FA class'), choices=ICON_CHOICES)
+    text = models.CharField(max_length=255, verbose_name=_('Paired text'))
+
+    class Meta(object):
+        verbose_name_plural = "IconTextPairings"
+
+    def __str__(self):
+        return str('IconTextPairing: {}'.format(self.text))
+
+
+class DegreeDeadline(TimeStampedModel):
+    """
+    DegreeDeadline stores a Degree's important dates. Each DegreeDeadline
+    displays in the Degree product page's "Details" section.
+    """
+    class Meta:
+        ordering = ['created']
+
+    degree = models.ForeignKey(Degree, on_delete=models.CASCADE, related_name='deadlines', null=True)
+    semester = models.CharField(
+        help_text=_('Deadline applies for this semester (e.g. Spring 2019'),
+        max_length=255,
+    )
+    name = models.CharField(
+        help_text=_('Describes the deadline (e.g. Early Admission Deadline)'),
+        max_length=255,
+    )
+    date = models.CharField(
+        help_text=_('The date after which the deadline expires (e.g. January 1, 2019)'),
+        max_length=255,
+    )
+    time = models.CharField(
+        help_text=_('The time after which the deadline expires (e.g. 11:59 PM EST).'),
+        max_length=255,
+    )
+
+    def __str__(self):
+        return "{} {}".format(self.name, self.date)
+
+
+class DegreeCost(TimeStampedModel):
+    """
+    Degree cost stores a Degree's associated costs. Each DegreeCost displays in
+    a Degree product page's "Details" section.
+    """
+    class Meta:
+        ordering = ['created']
+
+    degree = models.ForeignKey(Degree, on_delete=models.CASCADE, related_name='costs', null=True)
+    description = models.CharField(
+        help_text=_('Describes what the cost is for (e.g. Tuition)'),
+        max_length=255,
+    )
+    amount = models.CharField(
+        help_text=_('String-based field stating how much the cost is (e.g. $1000).'),
+        max_length=255,
+    )
+
+    def __str__(self):
+        return str('{}, {}'.format(self.description, self.amount))
+
+
 class Curriculum(TimeStampedModel):
     """
     This model links a degree to the curriculum associated with that degree, that is, the
     courses and programs that compose the degree.
     """
     uuid = models.UUIDField(blank=True, default=uuid4, editable=False, unique=True, verbose_name=_('UUID'))
-    name = models.CharField(max_length=255)
     degree = models.OneToOneField(Degree, on_delete=models.CASCADE, related_name='curriculum')
+    marketing_text_brief = models.TextField(
+        null=True,
+        blank=True,
+        max_length=750,
+        help_text=_(
+            """A high-level overview of the degree\'s courseware. The "brief"
+            text is the first 750 characters of "marketing_text" and must be
+            valid HTML."""
+        ),
+    )
+    marketing_text = models.TextField(
+        null=True,
+        blank=False,
+        help_text=_('A high-level overview of the degree\'s courseware.'),
+    )
     program_curriculum = models.ManyToManyField(
         Program, through='course_metadata.DegreeProgramCurriculum', related_name='degree_program_curricula'
     )
@@ -1352,7 +1596,7 @@ class Curriculum(TimeStampedModel):
     )
 
     def __str__(self):
-        return self.name
+        return str(self.uuid)
 
 
 class DegreeProgramCurriculum(TimeStampedModel):
@@ -1371,22 +1615,25 @@ class DegreeCourseCurriculum(TimeStampedModel):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
 
 
-class CreditPathway(TimeStampedModel):
-    """ Credit Pathway model """
+class Pathway(TimeStampedModel):
+    """
+    Pathway model
+    """
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, verbose_name=_('UUID'))
     partner = models.ForeignKey(Partner, null=True, blank=False)
     name = models.CharField(max_length=255)
     # this field doesn't necessarily map to our normal org models, it's just a convenience field for pathways
     # while we figure them out
     org_name = models.CharField(max_length=255, verbose_name=_("Organization name"))
-    email = models.EmailField()
+    email = models.EmailField(blank=True)
     programs = SortedManyToManyField(Program)
     description = models.TextField(null=True, blank=True)
     destination_url = models.URLField(null=True, blank=True)
-
-    class Meta(object):
-        unique_together = (
-            ('partner', 'name'),
-        )
+    pathway_type = models.CharField(
+        max_length=32,
+        choices=[(tag.value, tag.value) for tag in PathwayType],
+        default=PathwayType.CREDIT.value,
+    )
 
     def __str__(self):
         return self.name
@@ -1403,35 +1650,52 @@ class CreditPathway(TimeStampedModel):
             raise ValidationError(msg.format(', '.join(bad_programs)))  # pylint: disable=no-member
 
 
-class PersonSocialNetwork(AbstractSocialNetworkModel):
+class PersonSocialNetwork(TimeStampedModel):
     """ Person Social Network model. """
+    FACEBOOK = 'facebook'
+    TWITTER = 'twitter'
+    BLOG = 'blog'
+    OTHERS = 'others'
+
+    SOCIAL_NETWORK_CHOICES = {
+        FACEBOOK: _('Facebook'),
+        TWITTER: _('Twitter'),
+        BLOG: _('Blog'),
+        OTHERS: _('Others'),
+    }
+
+    type = models.CharField(max_length=15, choices=sorted(list(SOCIAL_NETWORK_CHOICES.items())), db_index=True)
+    url = models.CharField(max_length=500)
+    title = models.CharField(max_length=255, blank=True)
     person = models.ForeignKey(Person, related_name='person_networks')
 
     class Meta(object):
         verbose_name_plural = 'Person SocialNetwork'
 
         unique_together = (
-            ('person', 'type'),
+            ('person', 'type', 'title'),
         )
         ordering = ['created']
 
+    def __str__(self):
+        return '{title}: {url}'.format(title=self.display_title, url=self.url)
 
-class CourseRunSocialNetwork(AbstractSocialNetworkModel):
-    """ CourseRun Social Network model. """
-    course_run = models.ForeignKey(CourseRun, related_name='course_run_networks')
+    @property
+    def display_title(self):
+        if self.title:
+            return self.title
+        elif self.type == self.OTHERS:
+            return self.url
+        else:
+            return self.SOCIAL_NETWORK_CHOICES[self.type]
+
+
+class PersonAreaOfExpertise(AbstractValueModel):
+    """ Person Area of Expertise model. """
+    person = models.ForeignKey(Person, related_name='areas_of_expertise')
 
     class Meta(object):
-        verbose_name_plural = 'CourseRun SocialNetwork'
-
-        unique_together = (
-            ('course_run', 'type'),
-        )
-        ordering = ['created']
-
-
-class PersonWork(AbstractValueModel):
-    """ Person Works model. """
-    person = models.ForeignKey(Person, related_name='person_works')
+        verbose_name_plural = 'Person Areas of Expertise'
 
 
 class DataLoaderConfig(SingletonModel):
@@ -1441,6 +1705,39 @@ class DataLoaderConfig(SingletonModel):
     max_workers = models.PositiveSmallIntegerField(default=7)
 
 
+class DeletePersonDupsConfig(SingletonModel):
+    """
+    Configuration for the delete_person_dups management command.
+    """
+    class Meta(object):
+        verbose_name = 'delete_person_dups argument'
+
+    arguments = models.TextField(
+        blank=True,
+        help_text='Useful for manually running a Jenkins job. Specify like "--partner-code=edx A:B C:D".',
+        default='',
+    )
+
+    def __str__(self):
+        return self.arguments
+
+
+class DrupalPublishUuidConfig(SingletonModel):
+    """
+    Configuration for data loaders used in the publish_uuids_to_drupal command.
+    """
+    course_run_ids = models.TextField(default=None, null=False, blank=True, verbose_name=_('Course Run IDs'))
+    push_people = models.BooleanField(default=False)
+
+
+class ProfileImageDownloadConfig(SingletonModel):
+    """
+    Configuration for management command to Download Profile Images from Drupal.
+    """
+    person_uuids = models.TextField(default=None, null=False, blank=False, verbose_name=_('Profile Image UUIDs'))
+
+
 class ProgramEliteExtend(TimeStampedModel):
     program = models.ForeignKey(Program, to_field='uuid')
     video = models.CharField(max_length=255, unique=True)
+    

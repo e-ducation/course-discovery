@@ -21,6 +21,7 @@ from guardian.shortcuts import assign_perm
 from opaque_keys.edx.keys import CourseKey
 from pytz import timezone
 from testfixtures import LogCapture
+from waffle.testutils import override_switch
 
 from course_discovery.apps.api.tests.mixins import SiteMixin
 from course_discovery.apps.core.models import Currency, User
@@ -36,7 +37,7 @@ from course_discovery.apps.publisher.choices import (
 )
 from course_discovery.apps.publisher.constants import (
     ADMIN_GROUP_NAME, INTERNAL_USER_GROUP_NAME, PROJECT_COORDINATOR_GROUP_NAME,
-    PUBLISHER_CREATE_AUDIT_SEATS_FOR_VERIFIED_COURSE_RUNS, REVIEWER_GROUP_NAME
+    PUBLISHER_CREATE_AUDIT_SEATS_FOR_VERIFIED_COURSE_RUNS, PUBLISHER_ENABLE_READ_ONLY_FIELDS, REVIEWER_GROUP_NAME
 )
 from course_discovery.apps.publisher.forms import CourseEntitlementForm
 from course_discovery.apps.publisher.models import (
@@ -615,7 +616,7 @@ class CreateCourseRunViewTests(SiteMixin, TestCase):
 
         Create a course run with a verified seat (for a verified and credit seat, audit seat
         is automatically created), then try to create a new run of the same course and verify
-        the previous course run's seats and pacing is automatically populated.
+        the previous course run's seats are automatically populated.
         """
         verified_seat_price = 550.0
         latest_run = self.course.course_runs.latest('created')
@@ -627,17 +628,12 @@ class CreateCourseRunViewTests(SiteMixin, TestCase):
         response = self.client.get(self.create_course_run_url_new)
         response_content = BeautifulSoup(response.content)
 
-        pacing_type_attribute = response_content.find(
-            "input", {"value": latest_run.pacing_type, "type": "radio", "name": "pacing_type"}
-        )
         seat_type_attribute = response_content.find("option", {"value": verified_seat.type})
         price_attribute = response_content.find(
             "input", {"value": verified_seat.price, "id": "id_price", "step": "0.01", "type": "number"}
         )
 
         # Verify that existing course run and seat values auto populated on form.
-        self.assertIsNotNone(pacing_type_attribute)
-        self.assertIn('checked=""', str(pacing_type_attribute))
         self.assertIsNotNone(seat_type_attribute)
         self.assertIn('selected=""', str(seat_type_attribute))
         self.assertIsNotNone(price_attribute)
@@ -744,9 +740,9 @@ class CreateCourseRunViewTests(SiteMixin, TestCase):
         self.assertTrue(num_courseruns_after > num_courseruns_before)
 
         new_courserun = self.course.course_runs.latest('created')
-        self.assertEqual(new_courserun.start.strftime('%Y-%m-%d %H:%M:%S'), post_data['start'])
-        self.assertEqual(new_courserun.end.strftime('%Y-%m-%d %H:%M:%S'), post_data['end'])
-        self.assertEqual(new_courserun.pacing_type, post_data['pacing_type'])
+        self.assertEqual(new_courserun.start_date_temporary.strftime('%Y-%m-%d %H:%M:%S'), post_data['start'])
+        self.assertEqual(new_courserun.end_date_temporary.strftime('%Y-%m-%d %H:%M:%S'), post_data['end'])
+        self.assertEqual(new_courserun.pacing_type_temporary, post_data['pacing_type'])
 
         self.assertRedirects(
             response,
@@ -867,7 +863,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
         )
         self.course_state.name = CourseStateChoices.Approved
         self.course_state.save()
-        self.course_run.staff.add(PersonFactory(profile_url='http://test-profile'))
+        self.course_run.staff.add(PersonFactory())
 
     def test_page_without_login(self):
         """ Verify that user can't access detail page when not logged in. """
@@ -884,6 +880,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
             target_status_code=302
         )
 
+    @override_switch(PUBLISHER_ENABLE_READ_ONLY_FIELDS, active=True)
     def test_page_without_data(self):
         """ Verify that user can access detail page without any data
         available for that course-run.
@@ -913,6 +910,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
         """ Helper method to add credit seat for a course-run. """
         factories.SeatFactory(type='credit', course_run=self.course_run, credit_provider='ASU', credit_hours=9)
 
+    @override_switch(PUBLISHER_ENABLE_READ_ONLY_FIELDS, active=True)
     def test_course_run_detail_page_staff(self):
         """ Verify that detail page contains all the data for drupal, studio and
         cat with publisher admin user.
@@ -977,7 +975,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
 
         values = [
             self.wrapped_course_run.title, self.wrapped_course_run.number,
-            self.course_run.pacing_type
+            self.course_run.pacing_type_temporary
         ]
         for value in values:
             self.assertContains(response, value)
@@ -1000,7 +998,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
             self.wrapped_course_run.title, self.wrapped_course_run.lms_course_id,
             self.wrapped_course_run.seat_price,
             self.wrapped_course_run.min_effort,
-            self.wrapped_course_run.pacing_type, self.wrapped_course_run.persons,
+            self.wrapped_course_run.pacing_type_temporary, self.wrapped_course_run.persons,
             self.wrapped_course_run.max_effort, self.wrapped_course_run.language.name,
             self.wrapped_course_run.transcript_languages, self.wrapped_course_run.level_type,
             self.wrapped_course_run.expected_learnings, self.wrapped_course_run.course.learner_testimonial,
@@ -1027,7 +1025,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
 
     def _assert_dates(self, response):
         """ Helper method to test all dates. """
-        for value in [self.course_run.start, self.course_run.end]:
+        for value in [self.course_run.start_date_temporary, self.course_run.end_date_temporary]:
             self.assertContains(response, value.strftime(self.date_format))
 
     def test_course_run_with_version(self):
@@ -1052,6 +1050,7 @@ class CourseRunDetailTests(SiteMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'Enrollment Track')
 
+    @override_switch(PUBLISHER_ENABLE_READ_ONLY_FIELDS, active=True)
     def test_detail_page_with_comments(self):
         """ Verify that detail page contains all the data along with comments
         for course.
@@ -1184,8 +1183,8 @@ class CourseRunDetailTests(SiteMixin, TestCase):
         self.assertContains(response, '<li class="breadcrumb-item active">')
         self.assertContains(
             response, '{type}: {start}'.format(
-                type=course_run.get_pacing_type_display(),
-                start=course_run.start.strftime("%B %d, %Y")
+                type=course_run.get_pacing_type_temporary_display(),
+                start=course_run.start_date_temporary.strftime("%B %d, %Y")
             )
         )
 
@@ -2674,6 +2673,8 @@ class CourseDetailViewTests(TestCase):
 class CourseEditViewTests(SiteMixin, TestCase):
     """ Tests for the course edit view. """
 
+    course_error_message = 'The page could not be updated. Make sure that all values are correct, then try again.'
+
     def setUp(self):
         super(CourseEditViewTests, self).setUp()
         self.organization_extension = factories.OrganizationExtensionFactory()
@@ -2691,6 +2692,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         self.organization_extension.group.user_set.add(*(self.user, self.course_team_user))
 
         self.edit_page_url = reverse('publisher:publisher_courses_edit', args=[self.course.id])
+        self.course_detail_url = reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id})
 
     def test_edit_page_without_permission(self):
         """
@@ -2759,14 +2761,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         self.assertNotEqual(self.course.title, updated_course_title)
         self.assertNotEqual(self.course.changed_by, self.user)
 
-        response = self.client.post(self.edit_page_url, data=post_data)
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
+        self.AssertEditCourseSuccess(post_data)
 
         course = Course.objects.get(id=self.course.id)
         # Assert that course is updated.
@@ -2794,18 +2789,9 @@ class CourseEditViewTests(SiteMixin, TestCase):
         Verify that publisher user can update course team admin.
         """
         self._assign_permissions(self.organization_extension)
-
         self.assertEqual(self.course.course_team_admin, self.course_team_role.user)
 
-        response = self.client.post(self.edit_page_url, data=self._post_data(self.organization_extension))
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(self._post_data(self.organization_extension))
         self.assertEqual(self.course.course_team_admin, self.course_team_user)
 
     def test_update_course_organization(self):
@@ -2821,15 +2807,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
 
         self.assertEqual(self.course.organizations.first(), self.organization_extension.organization)
 
-        response = self.client.post(self.edit_page_url, data=self._post_data(organization_extension))
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(post_data=self._post_data(organization_extension))
         self.assertEqual(self.course.organizations.first(), organization_extension.organization)
 
     def _assign_permissions(self, organization_extension):
@@ -2864,15 +2842,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         post_data = self._post_data(self.organization_extension)
         post_data['team_admin'] = self.course_team_role.user.id
 
-        response = self.client.post(self.edit_page_url, data=post_data)
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(post_data)
         course_state = CourseState.objects.get(id=self.course.course_state.id)
         self.assertEqual(course_state.name, CourseStateChoices.Draft)
 
@@ -2897,15 +2867,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         post_data = self._post_data(self.organization_extension)
         post_data['team_admin'] = self.course_team_role.user.id
 
-        response = self.client.post(self.edit_page_url, data=post_data)
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(post_data)
         course_state = CourseState.objects.get(id=self.course.course_state.id)
         self.assertEqual(course_state.name, CourseStateChoices.Review)
         self.assertEqual(course_state.owner_role, PublisherUserRole.MarketingReviewer)
@@ -2926,15 +2888,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         post_data = self._post_data(self.organization_extension)
         post_data['team_admin'] = self.course_team_role.user.id
 
-        response = self.client.post(self.edit_page_url, data=post_data)
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(post_data)
         course_state = CourseState.objects.get(id=self.course.course_state.id)
         self.assertEqual(course_state.name, CourseStateChoices.Draft)
         self.assertEqual(course_state.owner_role, PublisherUserRole.CourseTeam)
@@ -2984,82 +2938,16 @@ class CourseEditViewTests(SiteMixin, TestCase):
         response = self.client.get(self.edit_page_url)
         self.assertNotContains(response, 'VIDEO LINK')
 
-    def test_update_with_errors(self):
+    def test_update_course_with_empty_title(self):
         """
-        Verify that page shows error if any required field data is missing.
+        Verify that page shows error if title field is empty.
         """
         self.user.groups.add(Group.objects.get(name=ADMIN_GROUP_NAME))
         post_data = self._post_data(self.organization_extension)
+        self.AssertEditCourseSuccess(post_data)
 
         post_data['title'] = ''
-        response = self.client.post(self.edit_page_url, data=post_data)
-        self.assertContains(response, 'The page could not be updated. Make sure that')
-
-    def test_text_area_max_length_error(self):
-        """
-        Verify that page shows error if any text area exceeds the max length.
-        """
-        self.user.groups.add(Group.objects.get(name=ADMIN_GROUP_NAME))
-        post_data = self._post_data(self.organization_extension)
-        post_data['title'] = 'test'
-        post_data['short_description'] = '''
-            <html>
-                <body>
-                <h2>An Unordered HTML List</h2>
-                <ul>
-                  <li>An Unordered HTML List. An Unordered HTML List</li>
-                  <li>An Unordered HTML List. An Unordered HTML List</li>
-                  <li>An Unordered HTML List</li>
-                </ul>
-                <ul>
-                  <li>An Unordered HTML List</li>
-                  <li>An Unordered HTML List</li>
-                  <li>An Unordered HTML List</li>
-                </ul>
-                <ul>
-                  <li>An Unordered HTML List</li>
-                  <li>An Unordered HTML List</li>
-                  <li>An Unordered HTML List</li>
-                </ul>
-                </body>
-            </html>
-        '''
-        response = self.client.post(self.edit_page_url, data=post_data)
-
-        self.assertContains(response, 'Ensure this value has at most 255 characters')
-
-    @ddt.data(
-        'short_description', 'full_description', 'prerequisites', 'expected_learnings',
-        'learner_testimonial', 'faq', 'syllabus'
-    )
-    def test_text_area_post_with_html(self, field):
-        """
-        Verify that page saves the text area html in db.
-        """
-        self.user.groups.add(Group.objects.get(name=ADMIN_GROUP_NAME))
-        post_data = self._post_data(self.organization_extension)
-        post_data['title'] = 'test'
-        post_data[field] = '''
-            <html>
-                <body>
-                <h2>An Unordered HTML List</h2>
-                <ul>
-                  <li>Coffee</li>
-                  <li>Tea</li>
-                </ul>
-                </body>
-            </html>
-        '''
-
-        response = self.client.post(self.edit_page_url, data=post_data)
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-        course = Course.objects.get(id=self.course.id)
-        self.assertEqual(post_data[field].strip(), getattr(course, field).strip())
+        self.AssertEditFailedWithError(post_data, error='This field is required')
 
     def test_edit_page_with_revision_changes(self):
         """
@@ -3112,13 +3000,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
 
         post_data['mode'] = CourseEntitlementForm.PROFESSIONAL_MODE
         post_data['price'] = 1
-        response = self.client.post(self.edit_page_url, data=post_data)
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
+        self.AssertEditCourseSuccess(post_data)
 
         # Clear out the seats created above and reset the version to test the mismatch cases
         course_run.seats.all().delete()
@@ -3178,15 +3060,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         post_data['mode'] = CourseEntitlementForm.VERIFIED_MODE
         post_data['price'] = 150
 
-        response = self.client.post(self.edit_page_url, data=post_data)
-        # Assert that this saves for an ENTITLEMENT_VERSION
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(post_data)
         # Assert that trying to switch to Audit/Credit Course (and thus allowing Course Run Seat configuration) fails
         for noop_mode in [''] + CourseEntitlementForm.NOOP_MODES:
             post_data['mode'] = noop_mode
@@ -3205,13 +3079,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         factories.CourseEntitlementFactory(course=new_course, mode=CourseEntitlement.VERIFIED)
         post_data['mode'] = CourseEntitlementForm.VERIFIED_MODE
         post_data['price'] = 1
-        response = self.client.post(self.edit_page_url, data=post_data)
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
+        self.AssertEditCourseSuccess(post_data)
 
     def test_entitlement_changes(self):
         """
@@ -3228,8 +3096,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         course_data['team_admin'] = self.user.id
         course_data['mode'] = CourseEntitlement.VERIFIED
         course_data['price'] = 150
-        response = self.client.post(self.edit_page_url, data=course_data)
-        self.assertEqual(response.status_code, 302)
+        self.AssertEditCourseSuccess(course_data)
 
         # New course run via form
         new_run_url = reverse('publisher:publisher_course_runs_new', kwargs={'parent_course_id': self.course.id})
@@ -3252,8 +3119,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         # Test price change
         course_data['mode'] = CourseEntitlement.VERIFIED
         course_data['price'] = 99
-        response = self.client.post(self.edit_page_url, data=course_data)
-        self.assertEqual(response.status_code, 302)
+        self.AssertEditCourseSuccess(course_data)
         # Use this query because we delete the original records
         entitlement = CourseEntitlement.objects.get(course=self.course)  # Should be only one entitlement for the Course
         paid_seat = Seat.objects.get(type=Seat.VERIFIED, course_run=course_run)
@@ -3264,8 +3130,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
 
         # Test mode change
         course_data['mode'] = CourseEntitlement.PROFESSIONAL
-        response = self.client.post(self.edit_page_url, data=course_data)
-        self.assertEqual(response.status_code, 302)
+        self.AssertEditCourseSuccess(course_data)
         paid_seat = Seat.objects.get(course_run=course_run)  # Should be only one seat now (no Audit seat)
         entitlement = CourseEntitlement.objects.get(course=self.course)  # Should be only one entitlement for the Course
         self.assertEqual(entitlement.mode, CourseEntitlement.PROFESSIONAL)
@@ -3274,8 +3139,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         # Test mode and price change again after saving but BEFORE publishing
         course_data['mode'] = CourseEntitlement.VERIFIED
         course_data['price'] = 1000
-        response = self.client.post(self.edit_page_url, data=course_data)
-        self.assertEqual(response.status_code, 302)
+        self.AssertEditCourseSuccess(course_data)
         # There should be both an audit seat and a verified seat
         audit_seat = Seat.objects.get(course_run=course_run, type=Seat.AUDIT)
         verified_seat = Seat.objects.get(course_run=course_run, type=Seat.VERIFIED)
@@ -3316,13 +3180,11 @@ class CourseEditViewTests(SiteMixin, TestCase):
         post_data['faq'] = 'Test FAQ Content'
         post_data['price'] = 50
         post_data['mode'] = verified_entitlement.mode
-        response = self.client.post(self.edit_page_url, data=post_data)
-        self.assertEqual(response.status_code, 302)
+        self.AssertEditCourseSuccess(post_data)
 
         # Verify that when start date is None it didn't raise server error
         self.course.course_runs.update(start=None)
-        response = self.client.post(self.edit_page_url, data=post_data)
-        self.assertEqual(response.status_code, 302)
+        self.AssertEditCourseSuccess(post_data)
 
         # Failure case when enrollment track is tried to change
         post_data = self._post_data(self.organization_extension)
@@ -3352,15 +3214,7 @@ class CourseEditViewTests(SiteMixin, TestCase):
         post_data = self._post_data(self.organization_extension)
         post_data['number'] = 'testX654'
 
-        response = self.client.post(self.edit_page_url, data=post_data)
-
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_detail', kwargs={'pk': self.course.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
+        self.AssertEditCourseSuccess(post_data)
         course_state = CourseState.objects.get(id=self.course.course_state.id)
         self.assertEqual(course_state.name, CourseStateChoices.Approved)
 
@@ -3375,6 +3229,39 @@ class CourseEditViewTests(SiteMixin, TestCase):
         )
 
         self.assertEqual(str(mail.outbox[0].subject), expected_subject)
+
+    def AssertEditCourseSuccess(self, post_data):
+        """Helper method to assert the course edit was successful"""
+        response = self.client.post(self.edit_page_url, data=post_data)
+        self.assertRedirects(response, expected_url=self.course_detail_url, status_code=302, target_status_code=200)
+        self.assertNotContains(response, text=self.course_error_message, status_code=302)
+
+    def AssertEditFailedWithError(self, post_data, error):
+        """Helper method to assert the course edit was unsuccessful and with with an error"""
+        response = self.client.post(self.edit_page_url, data=post_data)
+        self.assertContains(response, self.course_error_message)
+        self.assertContains(response, error)
+
+    def _generate_random_html(self, max_length):
+        """
+        Generates a random html of specified length.
+        """
+        clean_text = ''
+        random_html = """
+        <html>
+            <body>
+                <h2>An Unordered HTML List</h2>
+                <ul>
+                    {}
+                </ul>
+            </body>
+        </html>
+        """.strip()
+
+        while len(clean_text) < max_length:
+            random_html = random_html.format('<li>Random LI </li>{}')
+            clean_text = BeautifulSoup(random_html, 'html.parser').get_text(strip=True)
+        return clean_text[:max_length]
 
 
 @ddt.ddt
@@ -3969,7 +3856,8 @@ class CourseRunEditViewTests(SiteMixin, TestCase):
 
     def test_course_key_not_getting_blanked(self):
         """
-        Verify that `lms_course_id` not getting blanked if course team updates with empty value.
+        Verify that `lms_course_id` notest_course_run_detail_page_stafft getting blanked if course
+        team updates with empty value.
         """
         self.client.logout()
         user = self.new_course.course_team_admin
@@ -4178,36 +4066,6 @@ class CreateRunFromDashboardViewTests(SiteMixin, TestCase):
         response = self.client.post(self.create_course_run_url, post_data)
         self.assertContains(response, 'The page could not be updated. Make', status_code=400)
 
-    def test_create_course_run_and_seat(self):
-        """ Verify that we can create a new course run with seat. """
-        self.assertEqual(self.course.course_runs.count(), 0)
-        new_user = factories.UserFactory()
-        new_user.groups.add(self.organization_extension.group)
-
-        self.assertEqual(self.course.course_team_admin, self.user)
-
-        post_data = self._post_data()
-        response = self.client.post(self.create_course_run_url, self._post_data())
-
-        self.assertEqual(self.course.course_runs.count(), 1)
-
-        new_seat = Seat.objects.get(type=post_data['type'], price=post_data['price'])
-        self.assertRedirects(
-            response,
-            expected_url=reverse('publisher:publisher_course_run_detail', kwargs={'pk': new_seat.course_run.id}),
-            status_code=302,
-            target_status_code=200
-        )
-
-        self.assertEqual(new_seat.type, Seat.VERIFIED)
-        self.assertEqual(new_seat.price, post_data['price'])
-
-        # Verify that and email is sent for studio instance request to project coordinator.
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual([self.course.project_coordinator.email], mail.outbox[0].to)
-        expected_subject = 'Studio URL requested: {title}'.format(title=self.course.title)
-        self.assertEqual(str(mail.outbox[0].subject), expected_subject)
-
     def test_courserun_form_includes_seat_fields_on_error_for_non_entitlement_course(self):
         """ Verify that the Seat fields are visible when error occurs for Courses that do not use entitlements. """
         self.course.version = Course.SEAT_VERSION
@@ -4257,9 +4115,9 @@ class CreateRunFromDashboardViewTests(SiteMixin, TestCase):
         self.assertTrue(num_courseruns_after > num_courseruns_before)
 
         new_courserun = self.course.course_runs.latest('created')
-        self.assertEqual(new_courserun.start.strftime('%Y-%m-%d %H:%M:%S'), post_data['start'])
-        self.assertEqual(new_courserun.end.strftime('%Y-%m-%d %H:%M:%S'), post_data['end'])
-        self.assertEqual(new_courserun.pacing_type, post_data['pacing_type'])
+        self.assertEqual(new_courserun.start_date_temporary.strftime('%Y-%m-%d %H:%M:%S'), post_data['start'])
+        self.assertEqual(new_courserun.end_date_temporary.strftime('%Y-%m-%d %H:%M:%S'), post_data['end'])
+        self.assertEqual(new_courserun.pacing_type_temporary, post_data['pacing_type'])
 
         self.assertRedirects(
             response,

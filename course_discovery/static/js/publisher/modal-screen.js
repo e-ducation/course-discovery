@@ -33,19 +33,27 @@ $(document).ready(function(){
         $('body').addClass('stopScroll');
         resetModalData();
 
-        $('#instructorProfileModal div.full_name').html(data['full_name']);
-        $('#instructorProfileModal div.organization').html(data['organization']);
-        $('#instructorProfileModal img.image_url').attr('src', data['image_url']);
-        $('#instructorProfileModal a.btn-download').attr('href', data['image_url']);
-        $('#instructorProfileModal div.position').html(data['position']);
-        $('#instructorProfileModal div.bio').html(data['bio']);
-        $('#instructorProfileModal div.email').html(data['email']);
+        $('#instructorProfileModal div.full_name').html(data.full_name);
+        $('#instructorProfileModal div.organization').html(data.organization);
+        $('#instructorProfileModal img.image_url').attr('src', data.image_url);
+        $('#instructorProfileModal a.btn-download').attr('href', data.image_url);
+        $('#instructorProfileModal div.position').html(data.position);
+        $('#instructorProfileModal div.bio').html(data.bio);
+        $('#instructorProfileModal div.major-works').html(data.major_works);
 
-        assignData('.profile_url', data['profile_url']);
-        assignData('.facebook_url', data['social_networks']['facebook']);
-        assignData('.twitter_url', data['social_networks']['twitter']);
-        assignData('.blog_url', data['social_networks']['blog']);
+        data.social_networks.forEach(function(socialNetwork) {
+            var socialLinkHtml = '<div class="instructor-list-item-view">';
+            if (socialNetwork.title) socialLinkHtml += socialNetwork.title + ': ';
+            socialLinkHtml += '<a target="_blank">' + socialNetwork.url + '</a>';
+            socialLinkHtml += '</div>';
+            $('.social-links').append(socialLinkHtml);
+        });
+        data.areas_of_expertise.forEach(function(areaOfExpertise) {
+            var areaOfExpertiseHtml = '<div class="instructor-list-item-view"><p>' + areaOfExpertise.value + '</p></div>';
+            $('.areas-of-expertise').append(areaOfExpertiseHtml);
+        });
 
+        assignData('.profile_url', data.profile_url);
     });
 });
 
@@ -79,11 +87,9 @@ function resetModalData() {
     $('#instructorProfileModal div.position').html('');
     $('#instructorProfileModal a.btn-download').attr('href', '#');
     $('#instructorProfileModal div.bio').html('');
+    $('.instructor-list-item-view').remove();
 
-    assignData('.facebook_url', '#');
-    assignData('.twitter_url', '#');
     assignData('.profile_url', '#');
-    assignData('.blog_url', '#');
 }
 
 function assignData(element, data){
@@ -93,9 +99,11 @@ function assignData(element, data){
 
 function resetInstructorModalData() {
     var imgPath = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==',
-    selectors = ['#given-name', '#family-name', '#title', '#email', '#bio', '#facebook', '#twitter', '#blog', '#majorWorks'];
+    selectors = ['#given-name', '#family-name', '#title', '#bio', '#majorWorks'];
     $('#addInstructorModal div img').attr('src',imgPath);
     for (var i in selectors) clearData(selectors[i]);
+    $('.social-link').remove();
+    $('.area-of-expertise').remove();
 }
 
 function clearData(selector){
