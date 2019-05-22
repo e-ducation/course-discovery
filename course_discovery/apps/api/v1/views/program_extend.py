@@ -21,5 +21,5 @@ class ProgramEliteExtendViewSet(viewsets.ReadOnlyModelViewSet):
         return super(ProgramEliteExtendViewSet, self).list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):
-        """ Retrieve details for a person. """
+        """ Retrieve details for a program extend object. """
         return super(ProgramEliteExtendViewSet, self).retrieve(request, *args, **kwargs)
