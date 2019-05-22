@@ -404,3 +404,6 @@ for model in (LevelType, Prerequisite,):
 for model in (Image, ExpectedLearningItem, SyllabusItem, PersonSocialNetwork, JobOutlookItem, DataLoaderConfig,
               DeletePersonDupsConfig, DrupalPublishUuidConfig, ProfileImageDownloadConfig, PersonAreaOfExpertise):
     admin.site.register(model)
+
+# add elite extend models
+admin.site.register(ProgramEliteExtend)

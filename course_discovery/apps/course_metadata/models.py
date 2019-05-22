@@ -1807,3 +1807,8 @@ class ProfileImageDownloadConfig(SingletonModel):
     Configuration for management command to Download Profile Images from Drupal.
     """
     person_uuids = models.TextField(default=None, null=False, blank=False, verbose_name=_('Profile Image UUIDs'))
+
+
+class ProgramEliteExtend(TimeStampedModel):
+    program = models.ForeignKey(Program, to_field='uuid')
+    video = models.CharField(max_length=255, unique=True)
